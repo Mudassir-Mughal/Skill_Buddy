@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "588926423466",
+    "project_id": "fyp-skill-buddy",
+    "storage_bucket": "fyp-skill-buddy.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:588926423466:android:734255f019985362031bd3",
+        "android_client_info": {
+          "package_name": "com.mughal.skillbuddy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "588926423466-8uh5i3c84mqvs67bbtngvijuvovfe0ki.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mughal.skillbuddy",
+            "certificate_hash": "d8c67b6a247e55c41dac253b0a2bae712e797361"
+          }
+        },
+        {
+          "client_id": "588926423466-4bij3cmg9um6a1n4703aj2hckam08qc8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDx2pawIaMBX616YpL3TvjtxnLgd2rLP5w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "588926423466-4bij3cmg9um6a1n4703aj2hckam08qc8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "588926423466-v66ug82jj3l3huvrnq9ef4j06pa3dkds.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.skillBuddyFyp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
