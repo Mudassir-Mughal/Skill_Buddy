@@ -1,11 +1,10 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:skill_buddy_fyp/Screens/videocall.dart';
+import 'Outgoingcall.dart';
+import 'incomingcall.dart';
 import "theme.dart";
-
-// You can adjust these colors to match your app's theme.
-
-
-  // Bubble for peer
 
 class ChatPage extends StatefulWidget {
   final String currentUserId;
@@ -21,10 +20,20 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _controller = TextEditingController();
   late String chatRoomId;
 
+  StreamSubscription<QuerySnapshot>? _callSub;
+  bool _isShowingIncomingDialog = false;
+
   @override
   void initState() {
     super.initState();
     chatRoomId = getChatRoomId(widget.currentUserId, widget.peerId);
+    _listenForIncomingCalls();
+  }
+
+  @override
+  void dispose() {
+    _callSub?.cancel();
+    super.dispose();
   }
 
   String getChatRoomId(String user1, String user2) {
@@ -62,6 +71,107 @@ class _ChatPageState extends State<ChatPage> {
     _controller.clear();
   }
 
+  // -------------------- CALLING LOGIC --------------------
+
+  Future<void> _startVideoCall() async {
+    final callerId = widget.currentUserId;
+    final receiverId = widget.peerId;
+
+    // create unique callId
+    final callId = '${callerId}_to_${receiverId}_${DateTime.now().millisecondsSinceEpoch}';
+
+    // fetch both names (if available)
+    final callerSnap = await FirebaseFirestore.instance.collection('users').doc(callerId).get();
+    final receiverSnap = await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
+
+    final callerName = callerSnap.data()?['Fullname'] ?? callerId;
+    final receiverName = receiverSnap.data()?['Fullname'] ?? receiverId;
+
+    // create call doc
+    final callDocRef = FirebaseFirestore.instance.collection('calls').doc(callId);
+    await callDocRef.set({
+      'callId': callId,
+      'callerId': callerId,
+      'callerName': callerName,
+      'receiverId': receiverId,
+      'receiverName': receiverName,
+      'status': 'ringing', // ringing | accepted | rejected | ended | cancelled
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // navigate to outgoing screen (it will wait for status changes)
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OutgoingCallScreen(
+          callId: callId,
+          callerId: callerId,
+          callerName: callerName,
+          receiverId: receiverId,
+          receiverName: receiverName,
+        ),
+      ),
+    );
+  }
+
+
+  void _listenForIncomingCalls() {
+    _callSub = FirebaseFirestore.instance
+        .collection('calls')
+        .where('receiverId', isEqualTo: widget.currentUserId)
+        .where('status', isEqualTo: 'ringing')
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.docs.isEmpty) return;
+
+      final doc = snapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      final callerId = data['callerId'] as String? ?? 'Unknown';
+
+      if (callerId == widget.currentUserId) return;
+
+      if (!_isShowingIncomingDialog) {
+        _showIncomingCallScreen(doc);
+      }
+    }, onError: (e) {
+      debugPrint('Incoming call listen error: $e');
+    });
+  }
+
+  void _showIncomingCallScreen(QueryDocumentSnapshot doc) async {
+    setState(() => _isShowingIncomingDialog = true);
+
+    final data = doc.data() as Map<String, dynamic>;
+    final callerId = data['callerId'] as String? ?? 'Unknown';
+    final callId = data['callId'];
+
+    // 🔹 Fetch caller name
+    final callerSnapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(callerId)
+        .get();
+    final callerName = callerSnapshot.data()?['Fullname'] ?? callerId;
+
+    // 🔹 Navigate to full screen instead of dialog
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => IncomingCallScreen(
+          callId: callId,
+          callerId: callerId,
+          callerName: callerName,
+          currentUserId: widget.currentUserId,
+        ),
+      ),
+    ).then((_) {
+      // reset flag when screen is popped
+      setState(() => _isShowingIncomingDialog = false);
+    });
+  }
+
+
+  // -------------------- UI --------------------
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -88,20 +198,11 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
         actions: [
-          // IconButton(
-          //   icon: const Icon(Icons.video_call, color: AppColors.primary, size: 28),
-          //   onPressed: () {
-          //     Navigator.push(
-          //       context,
-          //       MaterialPageRoute(
-          //         builder: (_) => VideoCallPage(
-          //           meetingId: chatRoomId,              // use chatRoomId
-          //           userId: widget.currentUserId,         // pass current user
-          //         ),
-          //       ),
-          //     );
-          //   },
-          // ),
+          IconButton(
+            onPressed: _startVideoCall,
+            icon: const Icon(Icons.video_call, color: AppColors.primary),
+            tooltip: 'Start video call',
+          ),
         ],
       ),
       body: Column(

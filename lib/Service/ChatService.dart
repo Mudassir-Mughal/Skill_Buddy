@@ -6,7 +6,8 @@ class ChatService {
 
   /// Send a new message to chat room
   Future<void> sendMessage(ChatMessage message, String chatRoomId) async {
-    final chatRoomRef = FirebaseFirestore.instance.collection('chatRooms').doc(chatRoomId);
+    final chatRoomRef = FirebaseFirestore.instance.collection('chatRooms').doc(
+        chatRoomId);
 
     // Ensure chat room exists
     await chatRoomRef.set({
@@ -35,9 +36,10 @@ class ChatService {
         .collection('messages')
         .orderBy('timestamp', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => ChatMessage.fromMap(doc.data()))
-        .toList());
+        .map((snapshot) =>
+        snapshot.docs
+            .map((doc) => ChatMessage.fromMap(doc.data()))
+            .toList());
   }
 
   /// Get list of chat partners by fetching chatRooms where user is participant

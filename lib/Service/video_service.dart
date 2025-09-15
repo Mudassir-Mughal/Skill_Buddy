@@ -1,78 +1,98 @@
-// import 'dart:convert';
-// import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:firebase_messaging/firebase_messaging.dart';
-// import 'package:flutter/material.dart';
-// import 'package:http/http.dart' as http;
-//
-// import '../Screens/videocall.dart';
-//
-// class CallService {
-//   static final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-//
-//   /// Save device FCM token in Firestore for each user
-//   static Future<void> saveDeviceToken(String userId) async {
-//     String? token = await _fcm.getToken();
-//     if (token != null) {
-//       await FirebaseFirestore.instance
-//           .collection('users')
-//           .doc(userId)
-//           .update({'fcmToken': token});
-//     }
-//   }
-//
-//   /// Teacher sends call notification to Student
-//   static Future<void> sendCallNotification({
-//     required String callerId,
-//     required String receiverId,
-//     required String meetingId,
-//     required String serverKey, // Your Firebase Cloud Messaging server key
-//   }) async {
-//     // get receiver token
-//     var doc = await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
-//     String? token = doc['fcmToken'];
-//
-//     if (token == null) return;
-//
-//     final url = Uri.parse("https://fcm.googleapis.com/fcm/send");
-//     final payload = {
-//       "to": token,
-//       "data": {
-//         "type": "incoming_call",
-//         "meetingId": meetingId,
-//         "callerId": callerId,
-//       },
-//       "notification": {
-//         "title": "Incoming Call",
-//         "body": "Tap to join the video call",
-//       }
-//     };
-//
-//     await http.post(
-//       url,
-//       headers: {
-//         "Content-Type": "application/json",
-//         "Authorization": "key=$serverKey",
-//       },
-//       body: jsonEncode(payload),
-//     );
-//   }
-//
-//   /// Handle incoming calls
-//   static void initializeCallListener(GlobalKey<NavigatorState> navigatorKey) {
-//     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-//       if (message.data['type'] == 'incoming_call') {
-//         String meetingId = message.data['meetingId'];
-//         String callerId = message.data['callerId'];
-//
-//         navigatorKey.currentState?.push(
-//           MaterialPageRoute(
-//             builder: (_) => IncomingCallScreen(
-//               meetingId: meetingId,
-//               callerId: callerId,
-//             ),
-//           ),
-//         );
-//       }
-//     });
-//   }
-// }
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class CallService {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Create a new call document with offer (signaling)
+  Future<void> createCallOffer({
+    required String chatRoomId,
+    required String callerId,
+    required String calleeId,
+    required Map<String, dynamic> offer,
+  }) async {
+    final callRef = _firestore
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('calls')
+        .doc('activeCall');
+
+    await callRef.set({
+      'callerId': callerId,
+      'calleeId': calleeId,
+      'offer': offer,
+      'answer': null,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Set answer from callee
+  Future<void> setCallAnswer({
+    required String chatRoomId,
+    required Map<String, dynamic> answer,
+  }) async {
+    final callRef = _firestore
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('calls')
+        .doc('activeCall');
+    await callRef.update({'answer': answer});
+  }
+
+  /// Add ICE candidate to subcollection
+  Future<void> addIceCandidate({
+    required String chatRoomId,
+    required String candidateType, // 'caller' or 'callee'
+    required Map<String, dynamic> candidate,
+  }) async {
+    final candidatesRef = _firestore
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('calls')
+        .doc('activeCall')
+        .collection('${candidateType}_candidates');
+    await candidatesRef.add(candidate);
+  }
+
+  /// Listen for call document
+  Stream<DocumentSnapshot<Map<String, dynamic>>> callStream(String chatRoomId) {
+    return _firestore
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('calls')
+        .doc('activeCall')
+        .snapshots();
+  }
+
+  /// Listen for ICE candidates
+  Stream<QuerySnapshot<Map<String, dynamic>>> candidateStream(
+      String chatRoomId, String candidateType) {
+    return _firestore
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('calls')
+        .doc('activeCall')
+        .collection('${candidateType}_candidates')
+        .snapshots();
+  }
+
+  /// End call and cleanup docs
+  Future<void> endCallAndCleanup(String chatRoomId) async {
+    final callDocRef = _firestore
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('calls')
+        .doc('activeCall');
+
+    // Delete candidates subcollections
+    final callerCandidates = await callDocRef.collection('caller_candidates').get();
+    for (var doc in callerCandidates.docs) {
+      await doc.reference.delete();
+    }
+    final calleeCandidates = await callDocRef.collection('callee_candidates').get();
+    for (var doc in calleeCandidates.docs) {
+      await doc.reference.delete();
+    }
+
+    await callDocRef.delete();
+  }
+}
