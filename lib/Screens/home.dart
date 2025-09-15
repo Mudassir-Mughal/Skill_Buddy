@@ -45,9 +45,54 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (currentUserId != null)
         ChatListPage(currentUserId: currentUserId!)
       else
-        Center(child: Text('User not logged in')),
+        const Center(child: Text('User not logged in')),
       ViewRequestsPage(role: "Both"),
     ];
+  }
+
+  // Helper widget that listens to the current user's Firestore document
+  // and returns a CircleAvatar (with image if available) and an optional name.
+  Widget _profileAvatar({double radius = 20, bool showBorder = true}) {
+    if (currentUserId == null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: AppColors.primary.withOpacity(0.12),
+        child: Icon(Icons.person_outline, color: AppColors.primary, size: radius),
+      );
+    }
+
+    final docStream = FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots();
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: docStream,
+      builder: (context, snapshot) {
+        String? photoUrl;
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          photoUrl = (data != null ? (data['photoUrl'] as String?) : null);
+        }
+
+        final avatar = CircleAvatar(
+          radius: radius,
+          backgroundColor: AppColors.primary.withOpacity(0.12),
+          backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+          child: (photoUrl == null || photoUrl.isEmpty)
+              ? Icon(Icons.person_outline, color: AppColors.primary, size: radius)
+              : null,
+        );
+
+        if (!showBorder) return avatar;
+
+        return Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary.withOpacity(0.08),
+          ),
+          child: avatar,
+        );
+      },
+    );
   }
 
   @override
@@ -92,15 +137,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   right: 0,
                   child: GestureDetector(
                     onTap: () => _showProfileCard(context),
-                    child: CircleAvatar(
-                      radius: 20,
-                      backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
-                      child: Icon(
-                        Icons.person_outline,
-                        color: theme.colorScheme.primary,
-                        size: 24,
-                      ),
-                    ),
+                    child: _profileAvatar(radius: 20),
                   ),
                 ),
               ],
@@ -193,14 +230,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return Column(
       children: [
         const SizedBox(height: 28),
-        // App logo or profile
+        // App logo or profile (now dynamic)
         GestureDetector(
           onTap: () => _showProfileCard(context),
-          child: CircleAvatar(
-            radius: 36,
-            backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
-            child: Icon(Icons.handshake_rounded, color: theme.colorScheme.primary, size: 38),
-          ),
+          child: _profileAvatar(radius: 36),
         ),
         const SizedBox(height: 36),
         // Navigation Items
@@ -297,124 +330,133 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Container(
-          width: 300,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                spreadRadius: 0,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Profile Header with Gradient
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      theme.colorScheme.primary,
-                      theme.colorScheme.primary.withOpacity(0.8),
-                    ],
+        child: StreamBuilder<DocumentSnapshot>(
+          stream: currentUserId != null
+              ? FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots()
+              : const Stream.empty(),
+          builder: (context, snapshot) {
+            // build default values first
+            String displayName = 'User';
+            String email = '';
+            String? photoUrl;
+
+            if (snapshot.hasData && snapshot.data!.exists) {
+              final data = snapshot.data!.data() as Map<String, dynamic>?;
+              if (data != null) {
+                displayName = (data['Fullname'] ?? data['fullName'] ?? FirebaseAuth.instance.currentUser?.displayName ?? 'User').toString();
+                email = (data['email'] ?? FirebaseAuth.instance.currentUser?.email ?? '').toString();
+                photoUrl = (data['photoUrl'] as String?) ?? '';
+              }
+            }
+
+            return Container(
+              width: 320,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    spreadRadius: 0,
                   ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Profile Header with Gradient and image/name
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          theme.colorScheme.primary,
+                          theme.colorScheme.primary.withOpacity(0.85),
+                        ],
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: CircleAvatar(
+                            radius: 38,
+                            backgroundColor: Colors.white,
+                            backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                                ? NetworkImage(photoUrl)
+                                : null,
+                            child: (photoUrl == null || photoUrl.isEmpty)
+                                ? Icon(Icons.person, size: 44, color: theme.colorScheme.primary)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          displayName,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          email,
+                          style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                    ),
                   ),
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                      ),
-                      child: CircleAvatar(
-                        radius: 35,
-                        backgroundColor: Colors.white,
-                        child: Icon(
-                          Icons.person,
-                          size: 40,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Mudassir Mughal',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  ],
-                ),
+
+                  // Menu Items
+                  _buildProfileMenuItem(
+                    icon: Icons.person_outline,
+                    title: 'My Profile',
+                    subtitle: 'View and edit your profile',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+                    },
+                    theme: theme,
+                  ),
+                  _buildProfileMenuItem(
+                    icon: Icons.settings_outlined,
+                    title: 'Settings',
+                    subtitle: 'App preferences and more',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+                    },
+                    theme: theme,
+                  ),
+                  const Divider(height: 1),
+                  _buildProfileMenuItem(
+                    icon: Icons.logout,
+                    title: 'Logout',
+                    subtitle: 'Sign out from your account',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _handleLogout(context);
+                    },
+                    theme: theme,
+                    isDestructive: true,
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              // Menu Items
-              _buildProfileMenuItem(
-                icon: Icons.person_outline,
-                title: 'My Profile',
-                subtitle: 'View and edit your profile',
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ProfilePage()),
-                  );
-                },
-                theme: theme,
-              ),
-              _buildProfileMenuItem(
-                icon: Icons.settings_outlined,
-                title: 'Settings',
-                subtitle: 'App preferences and more',
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsPage()),
-                  );
-                },
-                theme: theme,
-              ),
-              const Divider(height: 1),
-              _buildProfileMenuItem(
-                icon: Icons.logout,
-                title: 'Logout',
-                subtitle: 'Sign out from your account',
-                onTap: () {
-                  Navigator.pop(context);
-                  _handleLogout(context);
-                },
-                theme: theme,
-                isDestructive: true,
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -445,9 +487,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               child: Icon(
                 icon,
                 size: 24,
-                color: isDestructive
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.primary,
+                color: isDestructive ? theme.colorScheme.error : theme.colorScheme.primary,
               ),
             ),
             const SizedBox(width: 16),
@@ -458,9 +498,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Text(
                     title,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: isDestructive
-                          ? theme.colorScheme.error
-                          : theme.colorScheme.onSurface,
+                      color: isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -503,7 +541,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           );
         }
       });
-
     } catch (e) {
       debugPrint("Logout error: $e");
       if (!context.mounted) return;
@@ -511,10 +548,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white),
-              const SizedBox(width: 8),
-              const Text("Error signing out"),
+            children: const [
+              Icon(Icons.error_outline, color: Colors.white),
+              SizedBox(width: 8),
+              Text("Error signing out"),
             ],
           ),
           behavior: SnackBarBehavior.floating,
