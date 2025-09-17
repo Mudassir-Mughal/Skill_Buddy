@@ -2,8 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'SkillCard.dart';
-import 'theme.dart'; // import your theme colors
+import 'theme.dart';
 import "SearchResult.dart";
+import 'lessonschedule.dart';
 
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
@@ -15,8 +16,8 @@ class HomeScreenContent extends StatefulWidget {
 class _HomeScreenContentState extends State<HomeScreenContent> {
   String fullName = '';
   bool isLoading = true;
-
   final TextEditingController _searchController = TextEditingController();
+  final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
   @override
   void initState() {
@@ -29,7 +30,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final doc = await FirebaseFirestore.instance
-            .collection('users') // Your collection name
+            .collection('users')
             .doc(user.uid)
             .get();
 
@@ -59,6 +60,156 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
+  Stream<List<QueryDocumentSnapshot>> fetchUpcomingLessons() async* {
+    final instructorStream = FirebaseFirestore.instance
+        .collection('lessons')
+        .where('status', isEqualTo: 'scheduled')
+        .where('instructorId', isEqualTo: currentUserId)
+        .orderBy('date', descending: false)
+        .snapshots();
+
+    final studentStream = FirebaseFirestore.instance
+        .collection('lessons')
+        .where('status', isEqualTo: 'scheduled')
+        .where('studentId', isEqualTo: currentUserId)
+        .orderBy('date', descending: false)
+        .snapshots();
+
+    await for (final instructorSnap in instructorStream) {
+      final studentSnap = await studentStream.first;
+      final merged = [...instructorSnap.docs, ...studentSnap.docs];
+
+      // Sort by date ascending
+      merged.sort((a, b) {
+        final aDate = DateTime.tryParse(a['date'] ?? '') ?? DateTime.now();
+        final bDate = DateTime.tryParse(b['date'] ?? '') ?? DateTime.now();
+        return aDate.compareTo(bDate);
+      });
+
+      yield merged;
+    }
+  }
+
+  bool isLessonEditable(String date, String time) {
+    try {
+      final lessonDateTime =
+      DateTime.parse("$date $time".trim().replaceAll('/', '-'));
+      return lessonDateTime.isAfter(DateTime.now());
+    } catch (e) {
+      return true; // fallback: allow if parsing fails
+    }
+  }
+
+  void _onEditLesson(BuildContext context, Map<String, dynamic> data, String lessonId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LessonSchedulePage(
+          currentUserId: currentUserId,
+          peerId: data['studentId'],
+          lessonId: lessonId,
+          lessonData: data,
+          isEdit: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onDeleteLesson(BuildContext context, String lessonId) async {
+    final theme = Theme.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: theme.dialogBackgroundColor,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.warning_rounded,
+                  size: 44, color: theme.colorScheme.error),
+              const SizedBox(height: 18),
+              Text(
+                "Delete Lesson?",
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: theme.colorScheme.onBackground,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Are you sure you want to delete this lesson?",
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[700],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 22),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.primary,
+                        side: BorderSide(color: theme.colorScheme.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text("Cancel"),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.error,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text("Delete"),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('lessons')
+            .doc(lessonId)
+            .delete();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text("Lesson deleted successfully"),
+              backgroundColor: theme.colorScheme.primary,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Delete failed: $e"),
+              backgroundColor: theme.colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -70,7 +221,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Welcome Section with Gradient
+            // Welcome Section
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -108,8 +259,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
-                  // Search Box with enhanced design
+                  // Search Box
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -144,7 +294,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             color: theme.colorScheme.primary,
                           ),
                         ),
-
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -249,49 +398,260 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 24),
 
                   // Popular Lessons Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Popular lessons",
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          // Add see all functionality
-                        },
-                        child: Row(
-                          children: [
-                            Text(
-                              "See All",
-                              style: TextStyle(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 16,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
 
+
+                  // Upcoming Lessons Section
+                  Text(
+                    "Upcoming Lessons",
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 16),
 
-                  // Add your existing skills list here
-                  // You can keep your backend implementation
-                  // Just wrap it with enhanced UI components
+                  // Upcoming Lessons Cards
+                  StreamBuilder<List<QueryDocumentSnapshot>>(
+                    stream: fetchUpcomingLessons(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: CircularProgressIndicator(
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        );
+                      }
+                      if (snapshot.hasError) {
+                        return Text(
+                          "Error: ${snapshot.error}",
+                          style: const TextStyle(color: Colors.red),
+                        );
+                      }
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(vertical: 32),
+                          alignment: Alignment.center,
+                          child: Text(
+                            "No upcoming lessons",
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      }
+
+                      final lessons = snapshot.data!;
+
+                      return Column(
+                        children: lessons.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final lessonId = doc.id;
+                          final outline = data['outline'] ?? '';
+                          final date = data['date'] ?? '';
+                          final time = data['time'] ?? '';
+                          final duration = data['duration'] ?? '';
+                          final instructorId = data['instructorId'];
+                          final isInstructor = instructorId == currentUserId;
+                          final canEditDelete = isInstructor && isLessonEditable(date, time);
+
+                          // Improved Card UI
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 20),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  theme.colorScheme.primary.withOpacity(0.10),
+                                  theme.colorScheme.secondary.withOpacity(0.08),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(18),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: theme.colorScheme.primary.withOpacity(0.07),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(18),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () {},
+                                child: Padding(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              theme.colorScheme.secondary.withOpacity(0.3),
+                                              theme.colorScheme.primary,
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.all(12),
+                                        child: Icon(
+                                          Icons.school_rounded,
+                                          color: Colors.white,
+                                          size: 30,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 18),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              outline,
+                                              style: theme.textTheme.titleMedium?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: theme.colorScheme.primary,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            SingleChildScrollView(
+                                              scrollDirection: Axis.horizontal,
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.calendar_today, size: 16, color: theme.colorScheme.secondary),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    date,
+                                                    style: theme.textTheme.bodyMedium,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Icon(Icons.access_time, size: 16, color: theme.colorScheme.secondary),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    time,
+                                                    style: theme.textTheme.bodyMedium,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Icon(Icons.timer, size: 16, color: theme.colorScheme.secondary),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    duration,
+                                                    style: theme.textTheme.bodyMedium,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (canEditDelete)
+                                        PopupMenuButton<String>(
+                                          icon: Icon(
+                                            Icons.more_vert_rounded,
+                                            color: theme.colorScheme.secondary,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(18),
+                                          ),
+                                          color: theme.cardColor,
+                                          elevation: 8,
+                                          onSelected: (value) {
+                                            if (value == 'edit') {
+                                              _onEditLesson(context, data, lessonId);
+                                            } else if (value == 'delete') {
+                                              _onDeleteLesson(context, lessonId);
+                                            }
+                                          },
+                                          itemBuilder: (context) => [
+                                            PopupMenuItem(
+                                              value: 'edit',
+                                              child: Row(
+                                                children: [
+                                                  Container(
+                                                    decoration: BoxDecoration(
+                                                      color: theme.colorScheme.primary.withOpacity(0.12),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    padding: const EdgeInsets.all(6),
+                                                    child: Icon(Icons.edit_rounded, color: theme.colorScheme.primary, size: 20),
+                                                  ),
+                                                  const SizedBox(width: 16),
+                                                  Text(
+                                                    "Edit",
+                                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                                      fontWeight: FontWeight.w600,
+                                                      color: theme.colorScheme.primary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'delete',
+                                              child: Row(
+                                                children: [
+                                                  Container(
+                                                    decoration: BoxDecoration(
+                                                      color: theme.colorScheme.error.withOpacity(0.12),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    padding: const EdgeInsets.all(6),
+                                                    child: Icon(Icons.delete_rounded, color: theme.colorScheme.error, size: 20),
+                                                  ),
+                                                  const SizedBox(width: 16),
+                                                  Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        "Delete",
+                                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                                          fontWeight: FontWeight.w600,
+                                                          color: theme.colorScheme.error,
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        "Cancel lesson",
+                                                        style: theme.textTheme.bodySmall?.copyWith(
+                                                          color: theme.colorScheme.error.withOpacity(0.7),
+                                                          fontSize: 11,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      else
+                                        Tooltip(
+                                          message: isInstructor
+                                              ? "Lesson time has passed"
+                                              : "View only",
+                                          child: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),

@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:skill_buddy_fyp/Screens/videocall.dart';
 import 'Outgoingcall.dart';
 import 'incomingcall.dart';
-import "theme.dart";
+import 'lessonschedule.dart';
+import "theme.dart"; // 🔹 new page
 
 class ChatPage extends StatefulWidget {
   final String currentUserId;
@@ -23,11 +23,14 @@ class _ChatPageState extends State<ChatPage> {
   StreamSubscription<QuerySnapshot>? _callSub;
   bool _isShowingIncomingDialog = false;
 
+  String _userRole = "student"; // default role
+
   @override
   void initState() {
     super.initState();
     chatRoomId = getChatRoomId(widget.currentUserId, widget.peerId);
     _listenForIncomingCalls();
+    _loadUserRole(); // 🔹 load role from Firestore
   }
 
   @override
@@ -40,6 +43,19 @@ class _ChatPageState extends State<ChatPage> {
     return (user1.compareTo(user2) < 0)
         ? '${user1}_$user2'
         : '${user2}_$user1';
+  }
+
+  Future<void> _loadUserRole() async {
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.currentUserId)
+        .get();
+
+    if (userDoc.exists && userDoc.data()?['role'] != null) {
+      setState(() {
+        _userRole = userDoc.data()!['role'];
+      });
+    }
   }
 
   void _sendMessage() async {
@@ -77,29 +93,29 @@ class _ChatPageState extends State<ChatPage> {
     final callerId = widget.currentUserId;
     final receiverId = widget.peerId;
 
-    // create unique callId
-    final callId = '${callerId}_to_${receiverId}_${DateTime.now().millisecondsSinceEpoch}';
+    final callId =
+        '${callerId}_to_${receiverId}_${DateTime.now().millisecondsSinceEpoch}';
 
-    // fetch both names (if available)
-    final callerSnap = await FirebaseFirestore.instance.collection('users').doc(callerId).get();
-    final receiverSnap = await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
+    final callerSnap =
+    await FirebaseFirestore.instance.collection('users').doc(callerId).get();
+    final receiverSnap =
+    await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
 
     final callerName = callerSnap.data()?['Fullname'] ?? callerId;
     final receiverName = receiverSnap.data()?['Fullname'] ?? receiverId;
 
-    // create call doc
-    final callDocRef = FirebaseFirestore.instance.collection('calls').doc(callId);
+    final callDocRef =
+    FirebaseFirestore.instance.collection('calls').doc(callId);
     await callDocRef.set({
       'callId': callId,
       'callerId': callerId,
       'callerName': callerName,
       'receiverId': receiverId,
       'receiverName': receiverName,
-      'status': 'ringing', // ringing | accepted | rejected | ended | cancelled
+      'status': 'ringing',
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // navigate to outgoing screen (it will wait for status changes)
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -113,7 +129,6 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
   }
-
 
   void _listenForIncomingCalls() {
     _callSub = FirebaseFirestore.instance
@@ -145,14 +160,12 @@ class _ChatPageState extends State<ChatPage> {
     final callerId = data['callerId'] as String? ?? 'Unknown';
     final callId = data['callId'];
 
-    // 🔹 Fetch caller name
     final callerSnapshot = await FirebaseFirestore.instance
         .collection('users')
         .doc(callerId)
         .get();
     final callerName = callerSnapshot.data()?['Fullname'] ?? callerId;
 
-    // 🔹 Navigate to full screen instead of dialog
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -164,11 +177,9 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
     ).then((_) {
-      // reset flag when screen is popped
       setState(() => _isShowingIncomingDialog = false);
     });
   }
-
 
   // -------------------- UI --------------------
 
@@ -203,6 +214,24 @@ class _ChatPageState extends State<ChatPage> {
             icon: const Icon(Icons.video_call, color: AppColors.primary),
             tooltip: 'Start video call',
           ),
+
+          // 🔹 Show + icon only for instructor or both
+          if (_userRole == "instructor" || _userRole == "Both")
+            IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => LessonSchedulePage(
+                      currentUserId: widget.currentUserId,
+                      peerId: widget.peerId,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.add, color: AppColors.primary),
+              tooltip: 'Schedule Lesson',
+            ),
         ],
       ),
       body: Column(
@@ -232,17 +261,20 @@ class _ChatPageState extends State<ChatPage> {
                 }
                 final messages = snapshot.data!.docs;
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final msg = messages[index].data() as Map<String, dynamic>;
+                    final msg =
+                    messages[index].data() as Map<String, dynamic>;
                     final isMe = msg['senderId'] == widget.currentUserId;
                     return Align(
                       alignment:
                       isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.70,
+                          maxWidth:
+                          MediaQuery.of(context).size.width * 0.70,
                         ),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 10),
@@ -253,14 +285,15 @@ class _ChatPageState extends State<ChatPage> {
                           right: isMe ? 0 : 40,
                         ),
                         decoration: BoxDecoration(
-                          color: isMe
-                              ? AppColors.chatMe
-                              : AppColors.chatPeer,
+                          color:
+                          isMe ? AppColors.chatMe : AppColors.chatPeer,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(18),
                             topRight: const Radius.circular(18),
-                            bottomLeft: Radius.circular(isMe ? 18 : 4),
-                            bottomRight: Radius.circular(isMe ? 4 : 18),
+                            bottomLeft:
+                            Radius.circular(isMe ? 18 : 4),
+                            bottomRight:
+                            Radius.circular(isMe ? 4 : 18),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -273,7 +306,9 @@ class _ChatPageState extends State<ChatPage> {
                         child: Text(
                           msg['message'] ?? '',
                           style: TextStyle(
-                            color: isMe ? Colors.white : AppColors.primary,
+                            color: isMe
+                                ? Colors.white
+                                : AppColors.primary,
                             fontSize: 16,
                           ),
                         ),
@@ -287,7 +322,8 @@ class _ChatPageState extends State<ChatPage> {
           const Divider(height: 1),
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: SafeArea(
               top: false,
               child: Row(
@@ -297,7 +333,9 @@ class _ChatPageState extends State<ChatPage> {
                       decoration: BoxDecoration(
                         color: AppColors.background,
                         borderRadius: BorderRadius.circular(25),
-                        border: Border.all(color: AppColors.primary.withOpacity(0.13)),
+                        border: Border.all(
+                            color:
+                            AppColors.primary.withOpacity(0.13)),
                       ),
                       child: TextField(
                         controller: _controller,
@@ -306,7 +344,8 @@ class _ChatPageState extends State<ChatPage> {
                         decoration: InputDecoration(
                           hintText: "Type a message...",
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
+                          contentPadding:
+                          const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 12),
                         ),
                         style: const TextStyle(fontSize: 16),
