@@ -1,10 +1,12 @@
+// ... (imports remain the same)
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'Outgoingcall.dart';
 import 'incomingcall.dart';
 import 'lessonschedule.dart';
-import "theme.dart"; // 🔹 new page
+import "theme.dart";
 
 class ChatPage extends StatefulWidget {
   final String currentUserId;
@@ -87,48 +89,7 @@ class _ChatPageState extends State<ChatPage> {
     _controller.clear();
   }
 
-  // -------------------- CALLING LOGIC --------------------
-
-  Future<void> _startVideoCall() async {
-    final callerId = widget.currentUserId;
-    final receiverId = widget.peerId;
-
-    final callId =
-        '${callerId}_to_${receiverId}_${DateTime.now().millisecondsSinceEpoch}';
-
-    final callerSnap =
-    await FirebaseFirestore.instance.collection('users').doc(callerId).get();
-    final receiverSnap =
-    await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
-
-    final callerName = callerSnap.data()?['Fullname'] ?? callerId;
-    final receiverName = receiverSnap.data()?['Fullname'] ?? receiverId;
-
-    final callDocRef =
-    FirebaseFirestore.instance.collection('calls').doc(callId);
-    await callDocRef.set({
-      'callId': callId,
-      'callerId': callerId,
-      'callerName': callerName,
-      'receiverId': receiverId,
-      'receiverName': receiverName,
-      'status': 'ringing',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OutgoingCallScreen(
-          callId: callId,
-          callerId: callerId,
-          callerName: callerName,
-          receiverId: receiverId,
-          receiverName: receiverName,
-        ),
-      ),
-    );
-  }
+  // -------------------- CALLING LOGIC (unchanged for incoming calls)--------------------
 
   void _listenForIncomingCalls() {
     _callSub = FirebaseFirestore.instance
@@ -209,12 +170,6 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
         actions: [
-          IconButton(
-            onPressed: _startVideoCall,
-            icon: const Icon(Icons.video_call, color: AppColors.primary),
-            tooltip: 'Start video call',
-          ),
-
           // 🔹 Show + icon only for instructor or both
           if (_userRole == "instructor" || _userRole == "Both")
             IconButton(

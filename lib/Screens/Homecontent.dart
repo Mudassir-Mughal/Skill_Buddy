@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:skill_buddy_fyp/Screens/videocall.dart';
 import 'SkillCard.dart';
 import 'theme.dart';
 import "SearchResult.dart";
@@ -15,6 +16,7 @@ class HomeScreenContent extends StatefulWidget {
 
 class _HomeScreenContentState extends State<HomeScreenContent> {
   String fullName = '';
+  String currentUserName = '';
   bool isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   final currentUserId = FirebaseAuth.instance.currentUser!.uid;
@@ -36,6 +38,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
         setState(() {
           fullName = doc.data()?['Fullname'] ?? 'User';
+          currentUserName = doc.data()?['Fullname'] ?? 'User';
           isLoading = false;
         });
       }
@@ -43,6 +46,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       debugPrint("Error fetching Fullname: $e");
       setState(() {
         fullName = 'User';
+        currentUserName = 'User';
         isLoading = false;
       });
     }
@@ -60,34 +64,18 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
-  Stream<List<QueryDocumentSnapshot>> fetchUpcomingLessons() async* {
-    final instructorStream = FirebaseFirestore.instance
+  /// Firestore query for lessons where current user is instructor or student
+  Stream<List<QueryDocumentSnapshot>> fetchLessonsRealtime() {
+    // If your Firestore supports "or" queries (Firebase 9.0+), use this:
+    return FirebaseFirestore.instance
         .collection('lessons')
         .where('status', isEqualTo: 'scheduled')
-        .where('instructorId', isEqualTo: currentUserId)
-        .orderBy('date', descending: false)
-        .snapshots();
-
-    final studentStream = FirebaseFirestore.instance
-        .collection('lessons')
-        .where('status', isEqualTo: 'scheduled')
-        .where('studentId', isEqualTo: currentUserId)
-        .orderBy('date', descending: false)
-        .snapshots();
-
-    await for (final instructorSnap in instructorStream) {
-      final studentSnap = await studentStream.first;
-      final merged = [...instructorSnap.docs, ...studentSnap.docs];
-
-      // Sort by date ascending
-      merged.sort((a, b) {
-        final aDate = DateTime.tryParse(a['date'] ?? '') ?? DateTime.now();
-        final bDate = DateTime.tryParse(b['date'] ?? '') ?? DateTime.now();
-        return aDate.compareTo(bDate);
-      });
-
-      yield merged;
-    }
+        .where(Filter.or(
+      Filter('studentId', isEqualTo: currentUserId),
+      Filter('instructorId', isEqualTo: currentUserId),
+    ))
+        .snapshots()
+        .map((snapshot) => snapshot.docs);
   }
 
   bool isLessonEditable(String date, String time) {
@@ -100,7 +88,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
-  void _onEditLesson(BuildContext context, Map<String, dynamic> data, String lessonId) {
+  void _onEditLesson(
+      BuildContext context, Map<String, dynamic> data, String lessonId) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -210,257 +199,321 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
+  bool isLessonOver(String date, String endTime) {
+    try {
+      final end = DateTime.parse("$date $endTime".replaceAll('/', '-'));
+      return DateTime.now().isAfter(end);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  String getPeerId(Map<String, dynamic> data) {
+    if (data['instructorId'] == currentUserId) {
+      return data['studentId'];
+    } else {
+      return data['instructorId'];
+    }
+  }
+
+  /// This function will update `enabled` if the lesson's start time has come.
+  /// Call this inside each lesson card's build method.
+  Future<void> checkAndEnableLesson(DocumentSnapshot doc) async {
+    final data = doc.data() as Map<String, dynamic>;
+    final enabled = data['enabled'] == true;
+    final date = data['date'] ?? '';
+    final startTimeRaw = data['start_time'] ?? '';
+
+    if (!enabled && date != '' && startTimeRaw != '') {
+      try {
+        final start = DateTime.parse("$date $startTimeRaw".replaceAll('/', '-'));
+        if (DateTime.now().isAfter(start) || DateTime.now().isAtSameMomentAs(start)) {
+          // Only update if not already enabled
+          await doc.reference.update({'enabled': true});
+        }
+      } catch (_) {}
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Container(
       color: theme.colorScheme.background,
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Welcome Section
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.primary.withOpacity(0.8),
-                  ],
-                ),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(30),
-                  bottomRight: Radius.circular(30),
+      child: StreamBuilder<List<QueryDocumentSnapshot>>(
+        stream: fetchLessonsRealtime(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: CircularProgressIndicator(
+                  color: theme.colorScheme.primary,
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Hi, $fullName",
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Find your lessons today!",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white.withOpacity(0.9),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Search Box
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, 5),
-                        ),
+            );
+          }
+          if (snapshot.hasError) {
+            return Text(
+              "Error: ${snapshot.error}",
+              style: const TextStyle(color: Colors.red),
+            );
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return Container(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              alignment: Alignment.center,
+              child: Text(
+                "No upcoming lessons",
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            );
+          }
+
+          final lessons = snapshot.data!;
+
+          String formatTime(String time) {
+            try {
+              final parts = time.split(':');
+              if (parts.length == 2) {
+                final hour = int.parse(parts[0]);
+                final minute = int.parse(parts[1]);
+                final t = TimeOfDay(hour: hour, minute: minute);
+                return t.format(context);
+              }
+            } catch (_) {}
+            return time;
+          }
+
+          // Sort lessons by start time ascending (optional)
+          lessons.sort((a, b) {
+            final aDate = DateTime.tryParse(a['date'] ?? '');
+            final bDate = DateTime.tryParse(b['date'] ?? '');
+            return (aDate ?? DateTime.now()).compareTo(bDate ?? DateTime.now());
+          });
+
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Welcome Section (unchanged)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        theme.colorScheme.primary,
+                        theme.colorScheme.primary.withOpacity(0.8),
                       ],
                     ),
-                    child: TextField(
-                      controller: _searchController,
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 16,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(30),
+                      bottomRight: Radius.circular(30),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Hi, $fullName",
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
-                      onSubmitted: _goToSearchResults,
-                      decoration: InputDecoration(
-                        hintText: 'Search skills...',
-                        hintStyle: TextStyle(
-                          color: Colors.grey[400],
+                      const SizedBox(height: 8),
+                      Text(
+                        "Find your lessons today!",
+                        style: TextStyle(
                           fontSize: 16,
+                          color: Colors.white.withOpacity(0.9),
+                          fontWeight: FontWeight.w500,
                         ),
-                        suffixIcon: GestureDetector(
-                          onTap: () {
-                            _goToSearchResults(_searchController.text);
-                          },
-                          child: Icon(
-                            Icons.search_rounded,
-                            color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(height: 20),
+                      // Search Box
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 16,
+                          ),
+                          onSubmitted: _goToSearchResults,
+                          decoration: InputDecoration(
+                            hintText: 'Search skills...',
+                            hintStyle: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 16,
+                            ),
+                            suffixIcon: GestureDetector(
+                              onTap: () {
+                                _goToSearchResults(_searchController.text);
+                              },
+                              child: Icon(
+                                Icons.search_rounded,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
                           ),
                         ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
 
-            // Main Content
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Explore Banner
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          theme.colorScheme.primary,
-                          theme.colorScheme.secondary,
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.colorScheme.primary.withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
+                // Main Content
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Explore Banner (unchanged)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              theme.colorScheme.primary,
+                              theme.colorScheme.secondary,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Text(
-                                  "+100 lessons",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
+                                      "+100 lessons",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    "Discover Top Picks",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "Explore our most popular skills",
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                "Discover Top Picks",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                "Explore our most popular skills",
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.9),
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.arrow_forward_rounded,
-                            color: theme.colorScheme.primary,
-                            size: 24,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Popular Lessons Header
-
-
-                  // Upcoming Lessons Section
-                  Text(
-                    "Upcoming Lessons",
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Upcoming Lessons Cards
-                  StreamBuilder<List<QueryDocumentSnapshot>>(
-                    stream: fetchUpcomingLessons(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(20.0),
-                            child: CircularProgressIndicator(
-                              color: theme.colorScheme.primary,
                             ),
-                          ),
-                        );
-                      }
-                      if (snapshot.hasError) {
-                        return Text(
-                          "Error: ${snapshot.error}",
-                          style: const TextStyle(color: Colors.red),
-                        );
-                      }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(vertical: 32),
-                          alignment: Alignment.center,
-                          child: Text(
-                            "No upcoming lessons",
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey,
-                              fontWeight: FontWeight.w500,
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                Icons.arrow_forward_rounded,
+                                color: theme.colorScheme.primary,
+                                size: 24,
+                              ),
                             ),
-                          ),
-                        );
-                      }
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        "Upcoming Lessons",
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
-                      final lessons = snapshot.data!;
-
-                      return Column(
+                      // --- LESSON CARDS WITH JOIN CALL BUTTON + DELETE FOR EXPIRED ---
+                      Column(
                         children: lessons.map((doc) {
                           final data = doc.data() as Map<String, dynamic>;
                           final lessonId = doc.id;
                           final outline = data['outline'] ?? '';
                           final date = data['date'] ?? '';
-                          final time = data['time'] ?? '';
-                          final duration = data['duration'] ?? '';
+                          final startTimeRaw = data['start_time'] ?? '';
+                          final endTimeRaw = data['end_time'] ?? '';
                           final instructorId = data['instructorId'];
                           final isInstructor = instructorId == currentUserId;
-                          final canEditDelete = isInstructor && isLessonEditable(date, time);
+                          final canEditDelete = isInstructor && isLessonEditable(date, startTimeRaw);
 
-                          // Improved Card UI
+                          final startTimePretty = formatTime(startTimeRaw);
+                          final endTimePretty = formatTime(endTimeRaw);
+                          final timeRange = (startTimePretty.isNotEmpty && endTimePretty.isNotEmpty)
+                              ? "$startTimePretty - $endTimePretty"
+                              : (startTimePretty.isNotEmpty ? startTimePretty : endTimePretty);
+
+                          final lessonOver = isLessonOver(date, endTimeRaw);
+                          final peerId = getPeerId(data);
+
+                          final enabled = data['enabled'] == true;
+
+                          // --- KEY LOGIC: AUTOMAICALLY ENABLE IF TIME HAS COME ---
+                          checkAndEnableLesson(doc);
+
                           return Container(
                             margin: const EdgeInsets.only(bottom: 20),
                             decoration: BoxDecoration(
@@ -488,7 +541,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                 borderRadius: BorderRadius.circular(18),
                                 onTap: () {},
                                 child: Padding(
-                                  padding: const EdgeInsets.all(20),
+                                  padding: const EdgeInsets.all(12),
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -511,7 +564,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                           size: 30,
                                         ),
                                       ),
-                                      const SizedBox(width: 18),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,40 +572,107 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                             Text(
                                               outline,
                                               style: theme.textTheme.titleMedium?.copyWith(
-                                                fontWeight: FontWeight.bold,
+                                                fontWeight: FontWeight.w200,
                                                 color: theme.colorScheme.primary,
                                               ),
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
                                             ),
-                                            const SizedBox(height: 10),
-                                            SingleChildScrollView(
-                                              scrollDirection: Axis.horizontal,
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.calendar_today, size: 16, color: theme.colorScheme.secondary),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    date,
-                                                    style: theme.textTheme.bodyMedium,
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Icon(Icons.access_time, size: 16, color: theme.colorScheme.secondary),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    time,
-                                                    style: theme.textTheme.bodyMedium,
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Icon(Icons.timer, size: 16, color: theme.colorScheme.secondary),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    duration,
-                                                    style: theme.textTheme.bodyMedium,
-                                                  ),
-                                                ],
-                                              ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                Icon(Icons.calendar_today, size: 16, color: theme.colorScheme.secondary),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  date,
+                                                  style: theme.textTheme.bodyMedium,
+                                                ),
+                                              ],
                                             ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                Icon(Icons.access_time, size: 16, color: theme.colorScheme.secondary),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  timeRange,
+                                                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 10),
+                                            if (lessonOver)
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton.icon(
+                                                  icon: Icon(Icons.delete, color: Colors.white),
+                                                  label: Text(
+                                                    "Delete",
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.red,
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(30),
+                                                    ),
+                                                    padding: EdgeInsets.symmetric(vertical: 10),
+                                                  ),
+                                                  onPressed: () async {
+                                                    await _onDeleteLesson(context, lessonId);
+                                                  },
+                                                ),
+                                              )
+                                            else
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton.icon(
+                                                  icon: Icon(
+                                                    Icons.video_call_rounded,
+                                                    color: enabled
+                                                        ? Colors.white
+                                                        : Colors.grey.shade400,
+                                                  ),
+                                                  label: Text(
+                                                    enabled ? "Join Call" : "Not Active",
+                                                    style: TextStyle(
+                                                      color: enabled
+                                                          ? Colors.white
+                                                          : Colors.grey.shade400,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  onPressed: enabled
+                                                      ? () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) => CallPage(
+                                                          callID: lessonId,
+                                                          currentUserId: currentUserId,
+                                                          currentUserName: currentUserName,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                      : null,
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: enabled
+                                                        ? theme.colorScheme.primary
+                                                        : Colors.grey.shade200,
+                                                    shadowColor: enabled
+                                                        ? theme.colorScheme.primary.withOpacity(0.18)
+                                                        : Colors.transparent,
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(30),
+                                                    ),
+                                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                                    elevation: enabled ? 3 : 0,
+                                                  ),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ),
@@ -649,14 +769,14 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             ),
                           );
                         }).toList(),
-                      );
-                    },
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

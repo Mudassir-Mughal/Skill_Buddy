@@ -28,11 +28,10 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
   final TextEditingController _outlineController = TextEditingController();
 
   DateTime? _selectedDate;
-  TimeOfDay? _selectedTime;
-  String? _selectedDuration;
+  TimeOfDay? _selectedStartTime;
+  TimeOfDay? _selectedEndTime;
   String? _selectedRepeat;
 
-  final List<String> _durations = ["30 min", "1 hour", "2 hours"];
   final List<String> _repeatOptions = ["None", "1 day", "1 week", "1 month"];
 
   @override
@@ -53,17 +52,26 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
           );
         }
       }
-      // Parse time
-      if (data['time'] != null && data['time'] is String) {
-        final timeParts = (data['time'] as String).split(":");
+      // Parse start time
+      if (data['start_time'] != null && data['start_time'] is String) {
+        final timeParts = (data['start_time'] as String).split(":");
         if (timeParts.length == 2) {
-          _selectedTime = TimeOfDay(
+          _selectedStartTime = TimeOfDay(
             hour: int.tryParse(timeParts[0]) ?? 0,
             minute: int.tryParse(timeParts[1]) ?? 0,
           );
         }
       }
-      _selectedDuration = data['duration'];
+      // Parse end time
+      if (data['end_time'] != null && data['end_time'] is String) {
+        final timeParts = (data['end_time'] as String).split(":");
+        if (timeParts.length == 2) {
+          _selectedEndTime = TimeOfDay(
+            hour: int.tryParse(timeParts[0]) ?? 0,
+            minute: int.tryParse(timeParts[1]) ?? 0,
+          );
+        }
+      }
       _selectedRepeat = data['repeat'];
     }
   }
@@ -74,74 +82,128 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
       initialDate: _selectedDate ?? DateTime.now().add(Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);
     }
   }
 
-  Future<void> _pickTime() async {
+  Future<void> _pickStartTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime ?? TimeOfDay.now(),
+      initialTime: _selectedStartTime ?? TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
-      setState(() => _selectedTime = picked);
+      setState(() => _selectedStartTime = picked);
     }
   }
 
+  Future<void> _pickEndTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedEndTime ?? TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedEndTime = picked);
+    }
+  }
+
+  String? _validateTimes() {
+    if (_selectedStartTime == null || _selectedEndTime == null) return null;
+    final startMinutes = _selectedStartTime!.hour * 60 + _selectedStartTime!.minute;
+    final endMinutes = _selectedEndTime!.hour * 60 + _selectedEndTime!.minute;
+    if (endMinutes <= startMinutes) {
+      return "End time must be after start time";
+    }
+    return null;
+  }
+// ... rest of your code remains the same ...
+
   Future<void> _scheduleOrUpdateLesson() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedDate == null || _selectedTime == null) {
+    if (_selectedDate == null || _selectedStartTime == null || _selectedEndTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please select both date and time.")),
+        SnackBar(content: Text("Please select date, start time, and end time.")),
       );
       return;
     }
+    final timeValidation = _validateTimes();
+    if (timeValidation != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(timeValidation)));
+      return;
+    }
+
+    final lessonData = {
+      "instructorId": widget.currentUserId,
+      "studentId": widget.peerId,
+      "outline": _outlineController.text.trim(),
+      "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
+      "start_time": "${_selectedStartTime!.hour.toString().padLeft(2, '0')}:${_selectedStartTime!.minute.toString().padLeft(2, '0')}",
+      "end_time": "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}",
+      "repeat": _selectedRepeat ?? "None",
+      "enabled": false, // <-- Ensure enabled is set when scheduling!
+    };
 
     if (widget.isEdit && widget.lessonId != null) {
-      // Update existing lesson
       final lessonRef = FirebaseFirestore.instance.collection("lessons").doc(widget.lessonId);
-      final lessonData = {
-        "instructorId": widget.currentUserId,
-        "studentId": widget.peerId,
-        "outline": _outlineController.text.trim(),
-        "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
-        "time": "${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}",
-        "duration": _selectedDuration ?? "1 hour",
-        "repeat": _selectedRepeat ?? "None",
-        // Don't change status or createdAt here
-      };
       await lessonRef.update(lessonData);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Lesson Updated Successfully ✅")),
       );
       Navigator.pop(context);
     } else {
-      // Schedule new lesson
       final lessonRef = FirebaseFirestore.instance.collection("lessons").doc();
-      final lessonId = lessonRef.id;
-
-      final lessonData = {
-        "lessonId": lessonId,
-        "instructorId": widget.currentUserId,
-        "studentId": widget.peerId,
-        "outline": _outlineController.text.trim(),
-        "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
-        "time": "${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}",
-        "duration": _selectedDuration ?? "1 hour",
-        "repeat": _selectedRepeat ?? "None",
+      final newLessonData = {
+        ...lessonData,
+        "lessonId": lessonRef.id,
         "status": "scheduled",
         "createdAt": FieldValue.serverTimestamp(),
       };
-
-      await lessonRef.set(lessonData);
-
+      await lessonRef.set(newLessonData);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Lesson Scheduled Successfully ✅")),
       );
-
       Navigator.pop(context);
     }
   }
@@ -157,43 +219,43 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
       prefixIcon: icon != null
           ? Icon(
         icon,
-        color: AppColors.primary.withOpacity(0.7),
+        color: AppColors.primary.withOpacity(0.9),
         size: 22,
       )
           : null,
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 16,
+        horizontal: 18,
+        vertical: 20,
       ),
       enabledBorder: OutlineInputBorder(
         borderSide: BorderSide(
-          color: Colors.grey.shade200,
+          color: AppColors.primary.withOpacity(0.08),
           width: 1.5,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       focusedBorder: OutlineInputBorder(
         borderSide: BorderSide(
           color: AppColors.primary,
-          width: 2,
+          width: 2.2,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       errorBorder: OutlineInputBorder(
         borderSide: BorderSide(
           color: Colors.red.shade300,
           width: 1.5,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderSide: BorderSide(
           color: Colors.red.shade400,
           width: 2,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       errorStyle: const TextStyle(
         fontSize: 12,
@@ -207,28 +269,29 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
       hintText: hint,
       hintStyle: TextStyle(
         color: Colors.grey[400],
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: FontWeight.w400,
       ),
       isDense: true,
       border: OutlineInputBorder(
         borderSide: BorderSide(
-          color: Colors.grey.shade300,
+          color: AppColors.primary.withOpacity(0.09),
           width: 1.5,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
     );
   }
 
   BoxDecoration _getBoxDecoration() {
     return BoxDecoration(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
+      color: Colors.white,
       boxShadow: [
         BoxShadow(
-          color: Colors.grey.withOpacity(0.08),
+          color: AppColors.primary.withOpacity(0.06),
           blurRadius: 10,
-          offset: const Offset(0, 4),
+          offset: const Offset(0, 6),
         ),
       ],
     );
@@ -248,7 +311,7 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
         ),
         backgroundColor: Colors.white,
         iconTheme: IconThemeData(color: AppColors.primary),
-        elevation: 0.8,
+        elevation: 1.1,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
@@ -264,11 +327,11 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.primary.withOpacity(0.10),
-                      AppColors.primary.withOpacity(0.04),
+                      AppColors.primary.withOpacity(0.07),
+                      AppColors.primary.withOpacity(0.015),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(
                   children: [
@@ -321,44 +384,66 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
                             ? ""
                             : "${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}",
                       ),
+                      style: TextStyle(
+                        color: _selectedDate == null ? Colors.grey[500] : AppColors.primary,
+                        fontWeight: _selectedDate == null ? FontWeight.normal : FontWeight.bold,
+                        fontSize: 16,
+                      ),
                       validator: (_) => _selectedDate == null ? "Select date" : null,
                     ),
                   ),
                 ),
               ),
-              // Time Picker
+              // Start Time Picker
               GestureDetector(
-                onTap: _pickTime,
+                onTap: _pickStartTime,
                 child: Container(
                   decoration: _getBoxDecoration(),
                   margin: const EdgeInsets.only(bottom: 16),
                   child: AbsorbPointer(
                     child: TextFormField(
                       decoration: _inputDecoration(
-                        'Time',
+                        'Start Time',
                         icon: Icons.access_time_rounded,
-                        hint: "Select time",
+                        hint: "Select start time",
                       ),
                       controller: TextEditingController(
-                        text: _selectedTime == null ? "" : _selectedTime!.format(context),
+                        text: _selectedStartTime == null ? "" : _selectedStartTime!.format(context),
                       ),
-                      validator: (_) => _selectedTime == null ? "Select time" : null,
+                      style: TextStyle(
+                        color: _selectedStartTime == null ? Colors.grey[500] : AppColors.primary,
+                        fontWeight: _selectedStartTime == null ? FontWeight.normal : FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                      validator: (_) => _selectedStartTime == null ? "Select start time" : null,
                     ),
                   ),
                 ),
               ),
-              // Duration Dropdown
-              Container(
-                decoration: _getBoxDecoration(),
-                margin: const EdgeInsets.only(bottom: 16),
-                child: DropdownButtonFormField<String>(
-                  decoration: _inputDecoration('Class Duration', icon: Icons.timer_rounded),
-                  value: _selectedDuration,
-                  items: _durations
-                      .map((d) => DropdownMenuItem(value: d, child: Text(d)))
-                      .toList(),
-                  onChanged: (val) => setState(() => _selectedDuration = val),
-                  validator: (val) => val == null ? "Select duration" : null,
+              // End Time Picker
+              GestureDetector(
+                onTap: _pickEndTime,
+                child: Container(
+                  decoration: _getBoxDecoration(),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: AbsorbPointer(
+                    child: TextFormField(
+                      decoration: _inputDecoration(
+                        'End Time',
+                        icon: Icons.access_time_filled_rounded,
+                        hint: "Select end time",
+                      ),
+                      controller: TextEditingController(
+                        text: _selectedEndTime == null ? "" : _selectedEndTime!.format(context),
+                      ),
+                      style: TextStyle(
+                        color: _selectedEndTime == null ? Colors.grey[500] : AppColors.primary,
+                        fontWeight: _selectedEndTime == null ? FontWeight.normal : FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                      validator: (_) => _selectedEndTime == null ? "Select end time" : _validateTimes(),
+                    ),
+                  ),
                 ),
               ),
               // Repeat Dropdown
@@ -389,7 +474,7 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withOpacity(0.18),
+                      color: AppColors.primary.withOpacity(0.15),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -412,6 +497,7 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
+                  icon: Icon(Icons.save, color: Colors.white),
                 ),
               ),
               const SizedBox(height: 20),
