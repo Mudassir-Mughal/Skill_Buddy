@@ -1,17 +1,21 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:skill_buddy_fyp/Screens/participant.dart';
-import 'package:skill_buddy_fyp/Screens/homecontent.dart'; // <-- Make sure this path is correct for your project!
 import 'package:videosdk/videosdk.dart';
+import 'meetingcontrol.dart';
+// Import your home content page
+import 'package:skill_buddy_fyp/Screens/homecontent.dart';
 
 class MeetingScreen extends StatefulWidget {
   final String meetingId;
   final String token;
+  final String displayName;
 
   const MeetingScreen({
     super.key,
     required this.meetingId,
     required this.token,
+    required this.displayName,
   });
 
   @override
@@ -37,7 +41,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
     _room = VideoSDK.createRoom(
       roomId: widget.meetingId,
       token: widget.token,
-      displayName: "John Doe", // Change to user's name if available
+      displayName: widget.displayName,
       micEnabled: micEnabled,
       camEnabled: camEnabled,
       defaultCameraIndex: kIsWeb ? 0 : 1,
@@ -86,7 +90,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
       participants.clear();
       if (!_navigated) {
         _navigated = true;
-        // Always go to HomeContent page, replace with your home page widget
+        // Robust: always navigate to HomeScreenContent after leaving
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => HomeScreenContent()),
               (Route<dynamic> route) => false,
@@ -117,8 +121,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
 
   Future<bool> _onWillPop() async {
     _room.leave();
-    // Don't pop the page here, let Events.roomLeft handle navigation
-    return false;
+    return false; // Prevent default pop, let Events.roomLeft handle navigation
   }
 
   void _shareScreen() async {
@@ -320,14 +323,32 @@ class _MeetingScreenState extends State<MeetingScreen> {
                 ),
               ),
 
-              // Controls
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 child: controlsVisible
                     ? Column(
                   key: const ValueKey('controls'),
                   children: [
-                    _buildMeetingControls(),
+                    MeetingControls(
+                      micEnabled: micEnabled,
+                      camEnabled: camEnabled,
+                      isScreenSharing: isScreenSharing,
+                      speakerOn: speakerOn,
+                      onToggleMicButtonPressed: () {
+                        micEnabled ? _room.muteMic() : _room.unmuteMic();
+                        setState(() => micEnabled = !micEnabled);
+                      },
+                      onToggleCameraButtonPressed: () {
+                        camEnabled ? _room.disableCam() : _room.enableCam();
+                        setState(() => camEnabled = !camEnabled);
+                      },
+                      onScreenSharePressed: _shareScreen,
+                      onSpeakerTogglePressed: _toggleSpeaker,
+                      onLeaveButtonPressed: () {
+                        _room.leave();
+                      },
+                      onMorePressed: _showMoreOptions,
+                    ),
                   ],
                 )
                     : GestureDetector(
@@ -346,103 +367,6 @@ class _MeetingScreenState extends State<MeetingScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildMeetingControls() {
-    return Card(
-      elevation: 6,
-      margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: Colors.grey[900],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 18.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _circleButton(
-              icon: Icons.mic,
-              isOff: !micEnabled,
-              onPressed: () {
-                micEnabled ? _room.muteMic() : _room.unmuteMic();
-                setState(() => micEnabled = !micEnabled);
-              },
-              color: Colors.blueAccent,
-            ),
-            _circleButton(
-              icon: Icons.videocam,
-              isOff: !camEnabled,
-              onPressed: () {
-                camEnabled ? _room.disableCam() : _room.enableCam();
-                setState(() => camEnabled = !camEnabled);
-              },
-              color: Colors.purpleAccent,
-            ),
-            _circleButton(
-              icon: Icons.screen_share,
-              isOff: !isScreenSharing,
-              onPressed: _shareScreen,
-              color: Colors.greenAccent,
-            ),
-            _circleButton(
-              icon: Icons.volume_up,
-              isOff: !speakerOn,
-              onPressed: _toggleSpeaker,
-              color: Colors.orangeAccent,
-            ),
-            _circleButton(
-              icon: Icons.more_vert,
-              onPressed: _showMoreOptions,
-              color: Colors.grey,
-            ),
-            _circleButton(
-              icon: Icons.call_end,
-              onPressed: () {
-                _room.leave();
-              },
-              color: Colors.redAccent,
-              iconColor: Colors.white,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _circleButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    required Color color,
-    bool isOff = false,
-    Color iconColor = Colors.black87,
-  }) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Material(
-          color: color,
-          shape: const CircleBorder(),
-          child: IconButton(
-            icon: Icon(icon, color: iconColor),
-            onPressed: onPressed,
-            iconSize: 28,
-            splashRadius: 24,
-          ),
-        ),
-        if (isOff)
-          Positioned(
-            left: 8,
-            right: 8,
-            top: 20,
-            child: Container(
-              height: 3,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

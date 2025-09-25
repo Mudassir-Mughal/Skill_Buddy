@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../Service/video_api.dart';
 import 'videocall.dart';
 
 class OutgoingCallScreen extends StatefulWidget {
@@ -37,7 +38,7 @@ class _OutgoingCallScreenState extends State<OutgoingCallScreen> {
   void _listenCallDoc() {
     final docRef =
     FirebaseFirestore.instance.collection('calls').doc(widget.callId);
-    _callSub = docRef.snapshots().listen((snap) {
+    _callSub = docRef.snapshots().listen((snap) async {
       if (!snap.exists) return;
       final data = snap.data() as Map<String, dynamic>;
       final status = (data['status'] as String?) ?? 'ringing';
@@ -48,13 +49,28 @@ class _OutgoingCallScreenState extends State<OutgoingCallScreen> {
       if (!_navigated) {
         if (status == 'accepted') {
           _navigated = true;
+          // ---- Fetch correct roomId ----
+          String? roomId;
+          if (data.containsKey('roomId')) {
+            roomId = data['roomId'];
+          }
+          if (roomId == null) {
+            final lessonSnap = await FirebaseFirestore.instance
+                .collection('lessons')
+                .doc(widget.callId)
+                .get();
+            if (lessonSnap.exists && lessonSnap.data() != null) {
+              roomId = lessonSnap.data()!['roomId'];
+            }
+          }
+          roomId ??= widget.callId;
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => CallPage(
-                callID: widget.callId,
-                currentUserId: widget.callerId,
-                currentUserName: widget.callerName,
+              builder: (_) => MeetingScreen(
+                meetingId: roomId!,
+                token: token, // import at top from video_api.dart
               ),
             ),
           );

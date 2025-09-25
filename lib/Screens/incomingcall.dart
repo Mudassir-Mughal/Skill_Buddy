@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
-import 'videocall.dart'; // Your CallPage
+ // <-- MeetingScreen import!
+import '../Service/video_api.dart';
+import 'meetingscreen.dart'; // <-- Import your VideoSDK token
 
 class IncomingCallScreen extends StatefulWidget {
   final String callId;
@@ -24,7 +26,7 @@ class IncomingCallScreen extends StatefulWidget {
 
 class _IncomingCallScreenState extends State<IncomingCallScreen> {
   StreamSubscription<DocumentSnapshot>? _subscription;
-  bool _navigated = false; // ✅ Prevent double navigation
+  bool _navigated = false; // Prevent double navigation
 
   @override
   void initState() {
@@ -44,6 +46,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
       if ((status == 'cancelled' || status == 'ended' || status == 'rejected') &&
           mounted &&
           !_navigated) {
+        _navigated = true;
+        FlutterRingtonePlayer().stop();
         Navigator.of(context).pop();
       }
     });
@@ -55,7 +59,6 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
     super.dispose();
   }
 
-
   Future<void> _rejectCall(BuildContext context) async {
     try {
       await FirebaseFirestore.instance
@@ -65,9 +68,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
     } catch (e) {
       debugPrint('Reject call failed: $e');
     } finally {
-      // Stop ringtone when rejecting
       FlutterRingtonePlayer().stop();
-
       if (mounted && !_navigated) {
         _navigated = true;
         Navigator.of(context).pop();
@@ -91,24 +92,43 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
 
       if (mounted && !_navigated) {
         _navigated = true;
-
-        // Stop ringtone when accepting
         FlutterRingtonePlayer().stop();
+
+        // --- Fetch correct roomId ---
+        String? roomId;
+        // Try to get from call doc first
+        final callDoc = await FirebaseFirestore.instance
+            .collection('calls')
+            .doc(widget.callId)
+            .get();
+        if (callDoc.exists && callDoc.data() != null) {
+          roomId = callDoc.data()!['roomId'];
+        }
+        // If not found, try lessons collection
+        if (roomId == null) {
+          final lessonSnap = await FirebaseFirestore.instance
+              .collection('lessons')
+              .doc(widget.callId)
+              .get();
+          if (lessonSnap.exists && lessonSnap.data() != null) {
+            roomId = lessonSnap.data()!['roomId'];
+          }
+        }
+        roomId ??= widget.callId;
 
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => CallPage(
-              callID: widget.callId,
-              currentUserId: widget.currentUserId,
-              currentUserName: receiverName,
+            builder: (_) => MeetingScreen(
+              meetingId: roomId!,
+              token: token, displayName: '', // from your video_api.dart
             ),
           ),
         );
       }
     } catch (e) {
       debugPrint('Accept call failed: $e');
-      FlutterRingtonePlayer().stop(); // fallback in case of error
+      FlutterRingtonePlayer().stop();
     }
   }
 

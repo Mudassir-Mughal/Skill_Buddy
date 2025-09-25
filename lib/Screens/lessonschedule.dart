@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import '../Service/video_api.dart'; // <-- Import your createMeeting() and token
 
 class LessonSchedulePage extends StatefulWidget {
   final String currentUserId; // Instructor ID
@@ -158,7 +159,6 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
     }
     return null;
   }
-// ... rest of your code remains the same ...
 
   Future<void> _scheduleOrUpdateLesson() async {
     if (!_formKey.currentState!.validate()) return;
@@ -182,21 +182,32 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
       "start_time": "${_selectedStartTime!.hour.toString().padLeft(2, '0')}:${_selectedStartTime!.minute.toString().padLeft(2, '0')}",
       "end_time": "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}",
       "repeat": _selectedRepeat ?? "None",
-      "enabled": false, // <-- Ensure enabled is set when scheduling!
+      "enabled": false,
     };
 
     if (widget.isEdit && widget.lessonId != null) {
       final lessonRef = FirebaseFirestore.instance.collection("lessons").doc(widget.lessonId);
-      await lessonRef.update(lessonData);
+
+      // Get current data to preserve roomId
+      final current = await lessonRef.get();
+      String? roomId = current.data()?['roomId'];
+      await lessonRef.update({
+        ...lessonData,
+        if (roomId != null) "roomId": roomId, // Don't overwrite roomId!
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Lesson Updated Successfully ✅")),
       );
       Navigator.pop(context);
     } else {
+      // --- CREATE MEETING ON VideoSDK & SAVE roomId ---
+      final roomId = await createMeeting(); // <-- VideoSDK API call
       final lessonRef = FirebaseFirestore.instance.collection("lessons").doc();
       final newLessonData = {
         ...lessonData,
         "lessonId": lessonRef.id,
+        "roomId": roomId, // <-- VideoSDK roomId, NOT lessonRef.id!
         "status": "scheduled",
         "createdAt": FieldValue.serverTimestamp(),
       };

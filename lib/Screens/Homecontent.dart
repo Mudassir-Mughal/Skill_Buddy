@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:skill_buddy_fyp/Screens/videocall.dart';
+import '../Service/video_api.dart';
 import 'SkillCard.dart';
 import 'theme.dart';
 import "SearchResult.dart";
@@ -239,9 +240,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      color: theme.colorScheme.background,
-      child: StreamBuilder<List<QueryDocumentSnapshot>>(
+    // FIX: Wrap everything in a Scaffold so all Material widgets (like TextField) work!
+    return Scaffold(
+      backgroundColor: theme.colorScheme.background,
+      body: StreamBuilder<List<QueryDocumentSnapshot>>(
         stream: fetchLessonsRealtime(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -645,14 +647,29 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                                     ),
                                                   ),
                                                   onPressed: enabled
-                                                      ? () {
+                                                      ? () async {
+                                                    // 1. Lesson doc se roomId fetch karo (DO NOT call createMeeting here!)
+                                                    final lessonSnap = await FirebaseFirestore.instance
+                                                        .collection('lessons')
+                                                        .doc(lessonId)
+                                                        .get();
+                                                    final lessonData = lessonSnap.data();
+                                                    final roomId = lessonData?['roomId']; // Ye wahi hona chahiye jo schedule karte waqt save kiya tha
+
+                                                    if (roomId == null) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(content: Text("Room ID not found for this lesson.")),
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    // 2. Navigate to MeetingScreen
                                                     Navigator.push(
                                                       context,
                                                       MaterialPageRoute(
-                                                        builder: (_) => CallPage(
-                                                          callID: lessonId,
-                                                          currentUserId: currentUserId,
-                                                          currentUserName: currentUserName,
+                                                        builder: (_) => MeetingScreen(
+                                                          meetingId: roomId,
+                                                          token: token,
                                                         ),
                                                       ),
                                                     );
