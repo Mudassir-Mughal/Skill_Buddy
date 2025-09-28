@@ -240,43 +240,12 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // FIX: Wrap everything in a Scaffold so all Material widgets (like TextField) work!
     return Scaffold(
       backgroundColor: theme.colorScheme.background,
       body: StreamBuilder<List<QueryDocumentSnapshot>>(
         stream: fetchLessonsRealtime(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: CircularProgressIndicator(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            );
-          }
-          if (snapshot.hasError) {
-            return Text(
-              "Error: ${snapshot.error}",
-              style: const TextStyle(color: Colors.red),
-            );
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              alignment: Alignment.center,
-              child: Text(
-                "No upcoming lessons",
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            );
-          }
-
-          final lessons = snapshot.data!;
+          final lessons = snapshot.data ?? [];
 
           String formatTime(String time) {
             try {
@@ -489,304 +458,317 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       ),
                       const SizedBox(height: 16),
 
-                      // --- LESSON CARDS WITH JOIN CALL BUTTON + DELETE FOR EXPIRED ---
-                      Column(
-                        children: lessons.map((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final lessonId = doc.id;
-                          final outline = data['outline'] ?? '';
-                          final date = data['date'] ?? '';
-                          final startTimeRaw = data['start_time'] ?? '';
-                          final endTimeRaw = data['end_time'] ?? '';
-                          final instructorId = data['instructorId'];
-                          final isInstructor = instructorId == currentUserId;
-                          final canEditDelete = isInstructor && isLessonEditable(date, startTimeRaw);
-
-                          final startTimePretty = formatTime(startTimeRaw);
-                          final endTimePretty = formatTime(endTimeRaw);
-                          final timeRange = (startTimePretty.isNotEmpty && endTimePretty.isNotEmpty)
-                              ? "$startTimePretty - $endTimePretty"
-                              : (startTimePretty.isNotEmpty ? startTimePretty : endTimePretty);
-
-                          final lessonOver = isLessonOver(date, endTimeRaw);
-                          final peerId = getPeerId(data);
-
-                          final enabled = data['enabled'] == true;
-
-                          // --- KEY LOGIC: AUTOMAICALLY ENABLE IF TIME HAS COME ---
-                          checkAndEnableLesson(doc);
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  theme.colorScheme.primary.withOpacity(0.10),
-                                  theme.colorScheme.secondary.withOpacity(0.08),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(18),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: theme.colorScheme.primary.withOpacity(0.07),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
+                      // --- LESSON CARDS OR NO LESSON ---
+                      if (lessons.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 32),
+                          alignment: Alignment.center,
+                          child: Text(
+                            "No upcoming lessons",
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w500,
                             ),
-                            child: Material(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(18),
-                              child: InkWell(
+                          ),
+                        )
+                      else
+                        Column(
+                          children: lessons.map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            final lessonId = doc.id;
+                            final outline = data['outline'] ?? '';
+                            final date = data['date'] ?? '';
+                            final startTimeRaw = data['start_time'] ?? '';
+                            final endTimeRaw = data['end_time'] ?? '';
+                            final instructorId = data['instructorId'];
+                            final isInstructor = instructorId == currentUserId;
+                            final canEditDelete = isInstructor && isLessonEditable(date, startTimeRaw);
+
+                            final startTimePretty = formatTime(startTimeRaw);
+                            final endTimePretty = formatTime(endTimeRaw);
+                            final timeRange = (startTimePretty.isNotEmpty && endTimePretty.isNotEmpty)
+                                ? "$startTimePretty - $endTimePretty"
+                                : (startTimePretty.isNotEmpty ? startTimePretty : endTimePretty);
+
+                            final lessonOver = isLessonOver(date, endTimeRaw);
+                            final peerId = getPeerId(data);
+
+                            final enabled = data['enabled'] == true;
+
+                            // --- KEY LOGIC: AUTOMAICALLY ENABLE IF TIME HAS COME ---
+                            checkAndEnableLesson(doc);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    theme.colorScheme.primary.withOpacity(0.10),
+                                    theme.colorScheme.secondary.withOpacity(0.08),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
                                 borderRadius: BorderRadius.circular(18),
-                                onTap: () {},
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              theme.colorScheme.secondary.withOpacity(0.3),
-                                              theme.colorScheme.primary,
-                                            ],
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: theme.colorScheme.primary.withOpacity(0.07),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(18),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(18),
+                                  onTap: () {},
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                theme.colorScheme.secondary.withOpacity(0.3),
+                                                theme.colorScheme.primary,
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                          ),
+                                          padding: const EdgeInsets.all(12),
+                                          child: Icon(
+                                            Icons.school_rounded,
+                                            color: Colors.white,
+                                            size: 30,
                                           ),
                                         ),
-                                        padding: const EdgeInsets.all(12),
-                                        child: Icon(
-                                          Icons.school_rounded,
-                                          color: Colors.white,
-                                          size: 30,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              outline,
-                                              style: theme.textTheme.titleMedium?.copyWith(
-                                                fontWeight: FontWeight.w200,
-                                                color: theme.colorScheme.primary,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                outline,
+                                                style: theme.textTheme.titleMedium?.copyWith(
+                                                  fontWeight: FontWeight.w200,
+                                                  color: theme.colorScheme.primary,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Row(
-                                              children: [
-                                                Icon(Icons.calendar_today, size: 16, color: theme.colorScheme.secondary),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  date,
-                                                  style: theme.textTheme.bodyMedium,
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Row(
-                                              children: [
-                                                Icon(Icons.access_time, size: 16, color: theme.colorScheme.secondary),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  timeRange,
-                                                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 10),
-                                            if (lessonOver)
-                                              SizedBox(
-                                                width: double.infinity,
-                                                child: ElevatedButton.icon(
-                                                  icon: Icon(Icons.delete, color: Colors.white),
-                                                  label: Text(
-                                                    "Delete",
-                                                    style: TextStyle(
-                                                      color: Colors.white,
-                                                      fontWeight: FontWeight.bold,
+                                              const SizedBox(height: 6),
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.calendar_today, size: 16, color: theme.colorScheme.secondary),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    date,
+                                                    style: theme.textTheme.bodyMedium,
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.access_time, size: 16, color: theme.colorScheme.secondary),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    timeRange,
+                                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 10),
+                                              if (lessonOver)
+                                                SizedBox(
+                                                  width: double.infinity,
+                                                  child: ElevatedButton.icon(
+                                                    icon: Icon(Icons.delete, color: Colors.white),
+                                                    label: Text(
+                                                      "Delete",
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: Colors.red,
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(30),
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: Colors.red,
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius: BorderRadius.circular(30),
+                                                      ),
+                                                      padding: EdgeInsets.symmetric(vertical: 10),
                                                     ),
-                                                    padding: EdgeInsets.symmetric(vertical: 10),
+                                                    onPressed: () async {
+                                                      await _onDeleteLesson(context, lessonId);
+                                                    },
                                                   ),
-                                                  onPressed: () async {
-                                                    await _onDeleteLesson(context, lessonId);
-                                                  },
-                                                ),
-                                              )
-                                            else
-                                              SizedBox(
-                                                width: double.infinity,
-                                                child: ElevatedButton.icon(
-                                                  icon: Icon(
-                                                    Icons.video_call_rounded,
-                                                    color: enabled
-                                                        ? Colors.white
-                                                        : Colors.grey.shade400,
-                                                  ),
-                                                  label: Text(
-                                                    enabled ? "Join Call" : "Not Active",
-                                                    style: TextStyle(
+                                                )
+                                              else
+                                                SizedBox(
+                                                  width: double.infinity,
+                                                  child: ElevatedButton.icon(
+                                                    icon: Icon(
+                                                      Icons.video_call_rounded,
                                                       color: enabled
                                                           ? Colors.white
                                                           : Colors.grey.shade400,
-                                                      fontWeight: FontWeight.bold,
                                                     ),
-                                                  ),
-                                                  onPressed: enabled
-                                                      ? () async {
-                                                    // 1. Lesson doc se roomId fetch karo (DO NOT call createMeeting here!)
-                                                    final lessonSnap = await FirebaseFirestore.instance
-                                                        .collection('lessons')
-                                                        .doc(lessonId)
-                                                        .get();
-                                                    final lessonData = lessonSnap.data();
-                                                    final roomId = lessonData?['roomId']; // Ye wahi hona chahiye jo schedule karte waqt save kiya tha
-
-                                                    if (roomId == null) {
-                                                      ScaffoldMessenger.of(context).showSnackBar(
-                                                        SnackBar(content: Text("Room ID not found for this lesson.")),
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // 2. Navigate to MeetingScreen
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (_) => MeetingScreen(
-                                                          meetingId: roomId,
-                                                          token: token,
-                                                        ),
+                                                    label: Text(
+                                                      enabled ? "Join Call" : "Not Active",
+                                                      style: TextStyle(
+                                                        color: enabled
+                                                            ? Colors.white
+                                                            : Colors.grey.shade400,
+                                                        fontWeight: FontWeight.bold,
                                                       ),
-                                                    );
-                                                  }
-                                                      : null,
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: enabled
-                                                        ? theme.colorScheme.primary
-                                                        : Colors.grey.shade200,
-                                                    shadowColor: enabled
-                                                        ? theme.colorScheme.primary.withOpacity(0.18)
-                                                        : Colors.transparent,
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(30),
                                                     ),
-                                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                                    elevation: enabled ? 3 : 0,
+                                                    onPressed: enabled
+                                                        ? () async {
+                                                      // 1. Lesson doc se roomId fetch karo (DO NOT call createMeeting here!)
+                                                      final lessonSnap = await FirebaseFirestore.instance
+                                                          .collection('lessons')
+                                                          .doc(lessonId)
+                                                          .get();
+                                                      final lessonData = lessonSnap.data();
+                                                      final roomId = lessonData?['roomId']; // Ye wahi hona chahiye jo schedule karte waqt save kiya tha
+
+                                                      if (roomId == null) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(content: Text("Room ID not found for this lesson.")),
+                                                        );
+                                                        return;
+                                                      }
+
+                                                      // 2. Navigate to MeetingScreen
+                                                      Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                          builder: (_) => MeetingScreen(
+                                                            meetingId: roomId,
+                                                            token: token,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
+                                                        : null,
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: enabled
+                                                          ? theme.colorScheme.primary
+                                                          : Colors.grey.shade200,
+                                                      shadowColor: enabled
+                                                          ? theme.colorScheme.primary.withOpacity(0.18)
+                                                          : Colors.transparent,
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius: BorderRadius.circular(30),
+                                                      ),
+                                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                                      elevation: enabled ? 3 : 0,
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (canEditDelete)
-                                        PopupMenuButton<String>(
-                                          icon: Icon(
-                                            Icons.more_vert_rounded,
-                                            color: theme.colorScheme.secondary,
+                                            ],
                                           ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(18),
-                                          ),
-                                          color: theme.cardColor,
-                                          elevation: 8,
-                                          onSelected: (value) {
-                                            if (value == 'edit') {
-                                              _onEditLesson(context, data, lessonId);
-                                            } else if (value == 'delete') {
-                                              _onDeleteLesson(context, lessonId);
-                                            }
-                                          },
-                                          itemBuilder: (context) => [
-                                            PopupMenuItem(
-                                              value: 'edit',
-                                              child: Row(
-                                                children: [
-                                                  Container(
-                                                    decoration: BoxDecoration(
-                                                      color: theme.colorScheme.primary.withOpacity(0.12),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    padding: const EdgeInsets.all(6),
-                                                    child: Icon(Icons.edit_rounded, color: theme.colorScheme.primary, size: 20),
-                                                  ),
-                                                  const SizedBox(width: 16),
-                                                  Text(
-                                                    "Edit",
-                                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                                      fontWeight: FontWeight.w600,
-                                                      color: theme.colorScheme.primary,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            PopupMenuItem(
-                                              value: 'delete',
-                                              child: Row(
-                                                children: [
-                                                  Container(
-                                                    decoration: BoxDecoration(
-                                                      color: theme.colorScheme.error.withOpacity(0.12),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    padding: const EdgeInsets.all(6),
-                                                    child: Icon(Icons.delete_rounded, color: theme.colorScheme.error, size: 20),
-                                                  ),
-                                                  const SizedBox(width: 16),
-                                                  Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text(
-                                                        "Delete",
-                                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                                          fontWeight: FontWeight.w600,
-                                                          color: theme.colorScheme.error,
-                                                        ),
-                                                      ),
-                                                      Text(
-                                                        "Cancel lesson",
-                                                        style: theme.textTheme.bodySmall?.copyWith(
-                                                          color: theme.colorScheme.error.withOpacity(0.7),
-                                                          fontSize: 11,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                      else
-                                        Tooltip(
-                                          message: isInstructor
-                                              ? "Lesson time has passed"
-                                              : "View only",
-                                          child: Icon(Icons.lock_outline, color: Colors.grey[400]),
                                         ),
-                                    ],
+                                        if (canEditDelete)
+                                          PopupMenuButton<String>(
+                                            icon: Icon(
+                                              Icons.more_vert_rounded,
+                                              color: theme.colorScheme.secondary,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(18),
+                                            ),
+                                            color: theme.cardColor,
+                                            elevation: 8,
+                                            onSelected: (value) {
+                                              if (value == 'edit') {
+                                                _onEditLesson(context, data, lessonId);
+                                              } else if (value == 'delete') {
+                                                _onDeleteLesson(context, lessonId);
+                                              }
+                                            },
+                                            itemBuilder: (context) => [
+                                              PopupMenuItem(
+                                                value: 'edit',
+                                                child: Row(
+                                                  children: [
+                                                    Container(
+                                                      decoration: BoxDecoration(
+                                                        color: theme.colorScheme.primary.withOpacity(0.12),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      padding: const EdgeInsets.all(6),
+                                                      child: Icon(Icons.edit_rounded, color: theme.colorScheme.primary, size: 20),
+                                                    ),
+                                                    const SizedBox(width: 16),
+                                                    Text(
+                                                      "Edit",
+                                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                                        fontWeight: FontWeight.w600,
+                                                        color: theme.colorScheme.primary,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Container(
+                                                      decoration: BoxDecoration(
+                                                        color: theme.colorScheme.error.withOpacity(0.12),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      padding: const EdgeInsets.all(6),
+                                                      child: Icon(Icons.delete_rounded, color: theme.colorScheme.error, size: 20),
+                                                    ),
+                                                    const SizedBox(width: 16),
+                                                    Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          "Delete",
+                                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                                            fontWeight: FontWeight.w600,
+                                                            color: theme.colorScheme.error,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          "Cancel lesson",
+                                                          style: theme.textTheme.bodySmall?.copyWith(
+                                                            color: theme.colorScheme.error.withOpacity(0.7),
+                                                            fontSize: 11,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        else
+                                          Tooltip(
+                                            message: isInstructor
+                                                ? "Lesson time has passed"
+                                                : "View only",
+                                            child: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
+                            );
+                          }).toList(),
+                        ),
                     ],
                   ),
                 ),

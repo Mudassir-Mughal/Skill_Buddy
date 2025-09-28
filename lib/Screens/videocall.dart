@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:skill_buddy_fyp/Screens/participant.dart';
-import 'package:skill_buddy_fyp/Screens/homecontent.dart'; // <-- Make sure this path is correct for your project!
+import 'package:skill_buddy_fyp/Screens/homecontent.dart';
 import 'package:videosdk/videosdk.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MeetingScreen extends StatefulWidget {
   final String meetingId;
@@ -29,15 +31,28 @@ class _MeetingScreenState extends State<MeetingScreen> {
   Map<String, Participant> participants = {};
   String? presenterId;
   bool controlsVisible = true;
-  bool _navigated = false; // Prevent double navigation
+  bool _navigated = false;
+  String displayName = "User";
 
   @override
   void initState() {
     super.initState();
+    fetchDisplayName();
+  }
+
+  Future<void> fetchDisplayName() async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    displayName = userDoc.data()?['Fullname'] ?? "User";
+    initializeRoom();
+  }
+
+  void initializeRoom() {
     _room = VideoSDK.createRoom(
       roomId: widget.meetingId,
       token: widget.token,
-      displayName: "John Doe", // Change to user's name if available
+      displayName: displayName,
       micEnabled: micEnabled,
       camEnabled: camEnabled,
       defaultCameraIndex: kIsWeb ? 0 : 1,
@@ -86,11 +101,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
       participants.clear();
       if (!_navigated) {
         _navigated = true;
-        // Always go to HomeContent page, replace with your home page widget
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => HomeScreenContent()),
-              (Route<dynamic> route) => false,
-        );
+        Navigator.of(context).pop();
       }
     });
 
@@ -117,7 +128,6 @@ class _MeetingScreenState extends State<MeetingScreen> {
 
   Future<bool> _onWillPop() async {
     _room.leave();
-    // Don't pop the page here, let Events.roomLeft handle navigation
     return false;
   }
 
@@ -232,25 +242,6 @@ class _MeetingScreenState extends State<MeetingScreen> {
     setState(() => speakerOn = !speakerOn);
   }
 
-  void _showMoreOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        children: const [
-          ListTile(
-            leading: Icon(Icons.info, color: Colors.white),
-            title: Text('Meeting Info', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildHandleLine() {
     return Center(
       child: Container(
@@ -267,7 +258,10 @@ class _MeetingScreenState extends State<MeetingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Full screen screen share overlay
+    if (displayName == "User" && FirebaseAuth.instance.currentUser != null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     if (showScreenShareFull && presenterId != null) {
       return _buildScreenShareView(full: true);
     }
@@ -275,52 +269,82 @@ class _MeetingScreenState extends State<MeetingScreen> {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        backgroundColor: Colors.grey[100],
+        backgroundColor: Colors.grey[50],
         appBar: AppBar(
-          title: const Text('VideoSDK Meeting'),
-          elevation: 0,
-          backgroundColor: Colors.grey[900],
+          title: Text(
+            'Video Call',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 21,
+              color: Colors.white,
+              letterSpacing: 1.1,
+            ),
+          ),
+          elevation: 1.5,
+          backgroundColor: Color(0xFF6C63FF),
+          centerTitle: true,
+          automaticallyImplyLeading: false, // <------- Removes back arrow
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+          ),
         ),
         body: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Column(
             children: [
-              Card(
-                color: Colors.white,
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: ListTile(
-                  title: Text(
-                    "Meeting ID: ${widget.meetingId}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  leading: const Icon(Icons.meeting_room, color: Colors.blueAccent),
+              // User's Name at the top
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0, bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.account_circle, color: Colors.deepPurple, size: 32),
+                    const SizedBox(width: 10),
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        color: Colors.deepPurple,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (presenterId != null) _buildScreenShareView(),
 
               Expanded(
-                child: GridView.builder(
-                  gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    mainAxisExtent: 300,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.deepPurple.withOpacity(0.13),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                  itemBuilder: (context, index) {
-                    return ParticipantTile(
-                      key: Key(participants.values.elementAt(index).id),
-                      participant: participants.values.elementAt(index),
-                    );
-                  },
-                  itemCount: participants.length,
+                  child: GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      mainAxisExtent: 290,
+                    ),
+                    itemBuilder: (context, index) {
+                      return ParticipantTile(
+                        key: Key(participants.values.elementAt(index).id),
+                        participant: participants.values.elementAt(index),
+                      );
+                    },
+                    itemCount: participants.length,
+                  ),
                 ),
               ),
 
-              // Controls
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 child: controlsVisible
@@ -350,60 +374,58 @@ class _MeetingScreenState extends State<MeetingScreen> {
   }
 
   Widget _buildMeetingControls() {
-    return Card(
-      elevation: 6,
-      margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: Colors.grey[900],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 18.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _circleButton(
-              icon: Icons.mic,
-              isOff: !micEnabled,
-              onPressed: () {
-                micEnabled ? _room.muteMic() : _room.unmuteMic();
-                setState(() => micEnabled = !micEnabled);
-              },
-              color: Colors.blueAccent,
-            ),
-            _circleButton(
-              icon: Icons.videocam,
-              isOff: !camEnabled,
-              onPressed: () {
-                camEnabled ? _room.disableCam() : _room.enableCam();
-                setState(() => camEnabled = !camEnabled);
-              },
-              color: Colors.purpleAccent,
-            ),
-            _circleButton(
-              icon: Icons.screen_share,
-              isOff: !isScreenSharing,
-              onPressed: _shareScreen,
-              color: Colors.greenAccent,
-            ),
-            _circleButton(
-              icon: Icons.volume_up,
-              isOff: !speakerOn,
-              onPressed: _toggleSpeaker,
-              color: Colors.orangeAccent,
-            ),
-            _circleButton(
-              icon: Icons.more_vert,
-              onPressed: _showMoreOptions,
-              color: Colors.grey,
-            ),
-            _circleButton(
-              icon: Icons.call_end,
-              onPressed: () {
-                _room.leave();
-              },
-              color: Colors.redAccent,
-              iconColor: Colors.white,
-            ),
-          ],
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 3),
+      child: Card(
+        elevation: 8,
+        color: Colors.deepPurple[700],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 18.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _circleButton(
+                icon: Icons.mic,
+                isOff: !micEnabled,
+                onPressed: () {
+                  micEnabled ? _room.muteMic() : _room.unmuteMic();
+                  setState(() => micEnabled = !micEnabled);
+                },
+                color: Colors.deepPurple,
+              ),
+              _circleButton(
+                icon: Icons.videocam,
+                isOff: !camEnabled,
+                onPressed: () {
+                  camEnabled ? _room.disableCam() : _room.enableCam();
+                  setState(() => camEnabled = !camEnabled);
+                },
+                color: Colors.purpleAccent,
+              ),
+              _circleButton(
+                icon: Icons.screen_share,
+                isOff: !isScreenSharing,
+                onPressed: _shareScreen,
+                color: Colors.greenAccent,
+              ),
+              _circleButton(
+                icon: Icons.volume_up,
+                isOff: !speakerOn,
+                onPressed: _toggleSpeaker,
+                color: Colors.orangeAccent,
+              ),
+              // REMOVED: More/Meeting Info button
+              _circleButton(
+                icon: Icons.call_end,
+                onPressed: () {
+                  _room.leave();
+                },
+                color: Colors.redAccent,
+                iconColor: Colors.white,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -414,7 +436,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
     required VoidCallback onPressed,
     required Color color,
     bool isOff = false,
-    Color iconColor = Colors.black87,
+    Color iconColor = Colors.white,
   }) {
     return Stack(
       alignment: Alignment.center,
@@ -425,15 +447,15 @@ class _MeetingScreenState extends State<MeetingScreen> {
           child: IconButton(
             icon: Icon(icon, color: iconColor),
             onPressed: onPressed,
-            iconSize: 28,
-            splashRadius: 24,
+            iconSize: 29,
+            splashRadius: 28,
           ),
         ),
         if (isOff)
           Positioned(
-            left: 8,
-            right: 8,
-            top: 20,
+            left: 10,
+            right: 10,
+            top: 21,
             child: Container(
               height: 3,
               decoration: BoxDecoration(
