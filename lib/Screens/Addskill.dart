@@ -10,8 +10,6 @@ class AddSkillPage extends StatefulWidget {
 
   const AddSkillPage({super.key, this.existingData, this.skillId});
 
-
-
   @override
   State<AddSkillPage> createState() => _AddSkillPageState();
 }
@@ -20,12 +18,46 @@ class _AddSkillPageState extends State<AddSkillPage> {
   final _formKey = GlobalKey<FormState>();
   String _expertlevel = 'Beginner';
 
-  final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _totalClassesController = TextEditingController();
   final _durationController = TextEditingController();
   final _exchangeSkillController = TextEditingController();
   final _priceController = TextEditingController();
+
+  // NEW: For skills dropdown
+  List<String> _skillsToTeach = [];
+  String? _selectedSkill;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTeachSkills();
+    if (widget.existingData != null) {
+      final data = widget.existingData!;
+      _selectedSkill = data['title'] ?? null;
+      _descriptionController.text = data['description'] ?? '';
+      _totalClassesController.text = data['totalClasses']?.toString() ?? '';
+      _durationController.text = data['duration'] ?? '';
+      _exchangeSkillController.text = (data['exchangeFor'] is List)
+          ? (data['exchangeFor'] as List).join(', ')
+          : (data['exchangeFor'] ?? '').toString();
+      _priceController.text = data['price']?.toString() ?? '';
+      _expertlevel = data['expertlevel'] ?? 'Beginner';
+    }
+  }
+
+  Future<void> _fetchTeachSkills() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final skills = doc.data()?['skillsToTeach'] as List<dynamic>? ?? [];
+    setState(() {
+      _skillsToTeach = skills.map((e) => e.toString()).toList();
+      if (_selectedSkill == null && _skillsToTeach.isNotEmpty) {
+        _selectedSkill = _skillsToTeach.first;
+      }
+    });
+  }
 
   Future<void> _saveSkill() async {
     if (_formKey.currentState!.validate()) {
@@ -36,12 +68,14 @@ class _AddSkillPageState extends State<AddSkillPage> {
       final skillData = {
         'userId': user.uid,
         'instructor': user.displayName ?? '',
-        'title': _titleController.text.trim(),
+        'title': _selectedSkill ?? '',
         'description': _descriptionController.text.trim(),
         'expertlevel': _expertlevel,
         'totalClasses': int.tryParse(_totalClassesController.text.trim()) ?? 0,
         'duration': _durationController.text.trim(),
-        'exchangeFor': _exchangeSkillController.text.trim().split(','),
+        'exchangeFor': _exchangeSkillController.text.trim().isEmpty
+            ? []
+            : _exchangeSkillController.text.trim().split(','),
         'price': int.tryParse(_priceController.text.trim()) ?? 0,
         'timestamp': Timestamp.now(),
       };
@@ -72,26 +106,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
   }
 
   @override
-  void initState() {
-    super.initState();
-
-    // If editing (existingData is not null), prefill fields
-    if (widget.existingData != null) {
-      final data = widget.existingData!;
-      _titleController.text = data['title'] ?? '';
-      _descriptionController.text = data['description'] ?? '';
-      _totalClassesController.text = data['totalClasses']?.toString() ?? '';
-      _durationController.text = data['duration'] ?? '';
-      _exchangeSkillController.text = (data['exchangeFor'] is List)
-          ? (data['exchangeFor'] as List).join(', ')
-          : (data['exchangeFor'] ?? '').toString();
-      _priceController.text = data['price']?.toString() ?? '';
-    }
-  }
-
-  @override
   void dispose() {
-    _titleController.dispose();
     _descriptionController.dispose();
     _totalClassesController.dispose();
     _durationController.dispose();
@@ -99,8 +114,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
     _priceController.dispose();
     super.dispose();
   }
-
-
 
   InputDecoration _inputDecoration(String label, {IconData? icon}) {
     return InputDecoration(
@@ -166,7 +179,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
         fontWeight: FontWeight.w400,
       ),
       isDense: true,
-      // Add subtle shadow
       border: OutlineInputBorder(
         borderSide: BorderSide(
           color: Colors.grey.shade300,
@@ -174,6 +186,19 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
         borderRadius: BorderRadius.circular(16),
       ),
+    );
+  }
+
+  BoxDecoration _getBoxDecoration() {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.1),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
+        ),
+      ],
     );
   }
 
@@ -234,7 +259,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
               ),
               const SizedBox(height: 16),
 
-              // Skill Title
+              // Skill Title as Dropdown (UPDATED)
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -246,13 +271,24 @@ class _AddSkillPageState extends State<AddSkillPage> {
                     ),
                   ],
                 ),
-                child: TextFormField(
-                  controller: _titleController,
-                  decoration: _inputDecoration('Skill Title')
-                      .copyWith(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedSkill,
+                  items: _skillsToTeach.map((skill) {
+                    return DropdownMenuItem(
+                      value: skill,
+                      child: Text(skill),
+                    );
+                  }).toList(),
+                  decoration: _inputDecoration('Skill Title').copyWith(
                     prefixIcon: Icon(Icons.school_outlined, color: AppColors.primary),
                   ),
-                  validator: (value) => value!.isEmpty ? 'Please enter a title' : null,
+                  validator: (value) =>
+                  value == null || value.isEmpty ? 'Please select a skill to teach' : null,
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedSkill = value;
+                    });
+                  },
                 ),
               ),
               const SizedBox(height: 16),
@@ -456,19 +492,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
           ),
         ),
       ),
-    );
-  }
-
-  BoxDecoration _getBoxDecoration() {
-    return BoxDecoration(
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.grey.withOpacity(0.1),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
-        ),
-      ],
     );
   }
 }

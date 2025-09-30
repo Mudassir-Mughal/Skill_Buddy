@@ -1,4 +1,3 @@
-// lib/Screens/setprofile.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,7 +5,6 @@ import 'StudentHome.dart';
 import '../home.dart';
 import 'theme.dart'; // <-- your AppColors should be defined here
 import 'package:skill_buddy_fyp/Screens/home.dart';
-
 
 class SetProfilePage extends StatefulWidget {
   final Map<String, dynamic>? existingData;
@@ -94,6 +92,9 @@ class _SetProfilePageState extends State<SetProfilePage> {
     'Mobile App Design',
   ];
 
+  // Assign a unique index to each skill for future-proofing KNN
+  Map<String, int> skillToIndex = {};
+
   // Selected skills
   List<String> selectedTeachSkills = [];
   List<String> selectedLearnSkills = [];
@@ -101,6 +102,12 @@ class _SetProfilePageState extends State<SetProfilePage> {
   @override
   void initState() {
     super.initState();
+
+    // Build skillToIndex map
+    for (int i = 0; i < allSkills.length; i++) {
+      skillToIndex[allSkills[i]] = i;
+    }
+
     // Populate fields if existingData provided
     if (widget.existingData != null) {
       final data = widget.existingData!;
@@ -112,6 +119,7 @@ class _SetProfilePageState extends State<SetProfilePage> {
       _educationController.text = data['education'] ?? '';
       selectedTeachSkills = List<String>.from(data['skillsToTeach'] ?? []);
       selectedLearnSkills = List<String>.from(data['skillsToLearn'] ?? []);
+      // Optionally: Load vectors if you want to restore them, but not needed for display/UI
     }
   }
 
@@ -197,6 +205,15 @@ class _SetProfilePageState extends State<SetProfilePage> {
     );
   }
 
+  // Create binary vector for skills
+  List<int> _createSkillsVector(List<String> selectedSkills) {
+    // Always match the order of allSkills; future-proofing for new skills
+    return List<int>.generate(
+      allSkills.length,
+          (index) => selectedSkills.contains(allSkills[index]) ? 1 : 0,
+    );
+  }
+
   // Save profile to Firestore
   Future<void> _saveProfile() async {
     final phone = _phoneController.text.trim();
@@ -212,6 +229,7 @@ class _SetProfilePageState extends State<SetProfilePage> {
     // Role-based skills
     List<String> teachSkills = [];
     List<String> learnSkills = [];
+
     if (selectedRole == 'Instructor' || selectedRole == 'Both') teachSkills = selectedTeachSkills;
     if (selectedRole == 'Student' || selectedRole == 'Both') learnSkills = selectedLearnSkills;
 
@@ -221,6 +239,10 @@ class _SetProfilePageState extends State<SetProfilePage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Skills to Teach and Learn cannot be the same')));
       return;
     }
+
+    // Create binary vectors for KNN
+    List<int> skillsToTeachVector = _createSkillsVector(teachSkills);
+    List<int> skillsToLearnVector = _createSkillsVector(learnSkills);
 
     final user = _auth.currentUser;
     if (user == null) {
@@ -238,9 +260,13 @@ class _SetProfilePageState extends State<SetProfilePage> {
       'country': _countryController.text.trim(),
       'email': user.email ?? '',
       'skillsToTeach': teachSkills,
+      'skillsToTeachVector': skillsToTeachVector,
       'skillsToLearn': learnSkills,
+      'skillsToLearnVector': skillsToLearnVector,
       'profileSet': true,
       'timestamp': FieldValue.serverTimestamp(),
+      // Optionally: Save skillToIndex for debugging/future-proofing (not needed for KNN)
+      // 'skillToIndex': skillToIndex,
     };
 
     try {

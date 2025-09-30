@@ -76,3 +76,81 @@
 //     );
 //   }
 // }
+
+
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class FirebaseEmailVerificationTest extends StatefulWidget {
+  @override
+  State<FirebaseEmailVerificationTest> createState() => _FirebaseEmailVerificationTestState();
+}
+
+class _FirebaseEmailVerificationTestState extends State<FirebaseEmailVerificationTest> {
+  String status = "";
+  bool loading = false;
+
+  Future<void> sendVerificationEmail() async {
+    setState(() { loading = true; status = ""; });
+    try {
+      UserCredential cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: "mughalmudassir33@gmail.com",
+        password: "121212", // <-- put your password here!
+      );
+      User? user = cred.user;
+
+      if (user != null && !user.emailVerified) {
+        await user.sendEmailVerification();
+        setState(() {
+          status = "Verification email sent to ${user.email}.";
+        });
+      } else if (user != null && user.emailVerified) {
+        setState(() {
+          status = "Email already verified.";
+        });
+      } else {
+        setState(() {
+          status = "No user found.";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        status = "Error: $e";
+      });
+    } finally {
+      setState(() { loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        color: Colors.white,
+        width: double.infinity,
+        height: double.infinity,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text("Test Firebase Verification Email",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: loading ? null : sendVerificationEmail,
+                child: Text("Send Verification Email"),
+              ),
+              if (loading) ...[
+                const SizedBox(height: 18),
+                CircularProgressIndicator(),
+              ],
+              const SizedBox(height: 24),
+              Text(status, style: TextStyle(color: Colors.black87)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -64,7 +64,10 @@ class _SignUpPageState extends State<SignUpPage> {
         final user = userCredential.user;
 
         if (user != null) {
-          // Email verification REMOVED
+          // Send email verification
+          await user.sendEmailVerification();
+
+          // Save user to Firestore as before
           await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
             'uid': user.uid,
             'email': user.email,
@@ -72,16 +75,22 @@ class _SignUpPageState extends State<SignUpPage> {
             'createdAt': Timestamp.now(),
             'profileSet': false,
           });
+
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Account created!")),
+            const SnackBar(
+              content: Text(
+                "Account created! Please check your email to verify your account.",
+              ),
+            ),
           );
+
+          // Redirect to Login Page
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const LoginPage()),
-          );
-        }
-      } on FirebaseAuthException catch (e) {
+          );}}
+      on FirebaseAuthException catch (e) {
         if (e.code == 'weak-password') {
           setState(() {
             _passwordError = "Password should be at least 6 characters.";

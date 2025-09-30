@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:skill_buddy_fyp/Screens/setprofile.dart';
 import 'AppidentityIcon.dart';
 import 'StudentHome.dart';
 import 'home.dart';
@@ -70,26 +71,48 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           .get();
 
       if (userDoc.exists) {
-        final role = userDoc['role'];
+        final data = userDoc.data();
 
-        if (role == 'Student') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const StudentHomePage()),
-          );
+        // Safely get role
+        final role = data != null && data.containsKey('role') ? data['role'] : null;
+
+        // Safely get profileSet
+        final profileSet = data != null && data.containsKey('profileSet') ? data['profileSet'] : false;
+
+        if (profileSet == true) {
+          if (role == 'Student') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const StudentHomePage()),
+            );
+          } else if (role != null) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const HomePage()),
+            );
+          } else {
+            // Role missing but profile set → fallback
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+            );
+          }
         } else {
+          // Profile not set → navigate to SetProfilePage
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const HomePage()),
+            MaterialPageRoute(builder: (_) => const SetProfilePage(isFromSignUp: false)),
           );
         }
       } else {
+        // User document missing
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LoginPage()),
         );
       }
     } else {
+      // User not logged in
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
