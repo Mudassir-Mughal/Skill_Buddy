@@ -21,40 +21,47 @@ class _AddSkillPageState extends State<AddSkillPage> {
   final _descriptionController = TextEditingController();
   final _totalClassesController = TextEditingController();
   final _durationController = TextEditingController();
-  final _exchangeSkillController = TextEditingController();
   final _priceController = TextEditingController();
 
-  // NEW: For skills dropdown
   List<String> _skillsToTeach = [];
+  List<String> _skillsWantToLearn = [];
   String? _selectedSkill;
+  String? _selectedExchangeSkill;
+  String userRole = "both"; // will fetch from Firestore
 
   @override
   void initState() {
     super.initState();
-    _fetchTeachSkills();
+    _fetchUserDataAndSkills();
     if (widget.existingData != null) {
       final data = widget.existingData!;
       _selectedSkill = data['title'] ?? null;
       _descriptionController.text = data['description'] ?? '';
       _totalClassesController.text = data['totalClasses']?.toString() ?? '';
       _durationController.text = data['duration'] ?? '';
-      _exchangeSkillController.text = (data['exchangeFor'] is List)
-          ? (data['exchangeFor'] as List).join(', ')
+      _selectedExchangeSkill = (data['exchangeFor'] is List && (data['exchangeFor'] as List).isNotEmpty)
+          ? (data['exchangeFor'] as List).first
           : (data['exchangeFor'] ?? '').toString();
       _priceController.text = data['price']?.toString() ?? '';
       _expertlevel = data['expertlevel'] ?? 'Beginner';
     }
   }
 
-  Future<void> _fetchTeachSkills() async {
+  Future<void> _fetchUserDataAndSkills() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    final skills = doc.data()?['skillsToTeach'] as List<dynamic>? ?? [];
+    final data = doc.data() ?? {};
     setState(() {
-      _skillsToTeach = skills.map((e) => e.toString()).toList();
+      _skillsToTeach = (data['skillsToTeach'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      // Make sure you use the same field name your SetProfilePage uses for "skills to learn":
+      _skillsWantToLearn = (data['skillsToLearn'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      userRole = ((data['role'] ?? "both") as String).toLowerCase();
       if (_selectedSkill == null && _skillsToTeach.isNotEmpty) {
         _selectedSkill = _skillsToTeach.first;
+      }
+      if (_selectedExchangeSkill == null && _skillsWantToLearn.isNotEmpty) {
+        _selectedExchangeSkill = _skillsWantToLearn.first;
       }
     });
   }
@@ -64,7 +71,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Prepare data
       final skillData = {
         'userId': user.uid,
         'instructor': user.displayName ?? '',
@@ -73,15 +79,16 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'expertlevel': _expertlevel,
         'totalClasses': int.tryParse(_totalClassesController.text.trim()) ?? 0,
         'duration': _durationController.text.trim(),
-        'exchangeFor': _exchangeSkillController.text.trim().isEmpty
+        'exchangeFor': userRole == "instructor"
             ? []
-            : _exchangeSkillController.text.trim().split(','),
-        'price': int.tryParse(_priceController.text.trim()) ?? 0,
+            : _selectedExchangeSkill != null ? [_selectedExchangeSkill] : [],
+        'price': userRole == "both"
+            ? 0
+            : int.tryParse(_priceController.text.trim()) ?? 0,
         'timestamp': Timestamp.now(),
       };
 
       if (widget.skillId != null) {
-        // Update existing skill
         await FirebaseFirestore.instance
             .collection('skills')
             .doc(widget.skillId)
@@ -91,17 +98,13 @@ class _AddSkillPageState extends State<AddSkillPage> {
           const SnackBar(content: Text('Skill updated successfully!')),
         );
       } else {
-        // Add new skill
         await FirebaseFirestore.instance.collection('skills').add(skillData);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Skill added successfully!')),
         );
       }
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MySkillsPage()),
-      );
+      Navigator.pop(context, 1); // return index = 1
     }
   }
 
@@ -110,7 +113,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
     _descriptionController.dispose();
     _totalClassesController.dispose();
     _durationController.dispose();
-    _exchangeSkillController.dispose();
     _priceController.dispose();
     super.dispose();
   }
@@ -206,289 +208,310 @@ class _AddSkillPageState extends State<AddSkillPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header Section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary.withOpacity(0.1),
-                      AppColors.primary.withOpacity(0.05),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.lightbulb_outline,
-                      color: AppColors.primary,
-                      size: 28,
+      body: Material( // Ensures dropdown overlays are not clipped
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Section
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary.withOpacity(0.1),
+                        AppColors.primary.withOpacity(0.05),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        "Share your expertise and connect with learners",
-                        style: TextStyle(
-                          color: Colors.grey[800],
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline,
+                        color: AppColors.primary,
+                        size: 28,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Form Fields
-              Text(
-                "Basic Information",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Skill Title as Dropdown (UPDATED)
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: DropdownButtonFormField<String>(
-                  value: _selectedSkill,
-                  items: _skillsToTeach.map((skill) {
-                    return DropdownMenuItem(
-                      value: skill,
-                      child: Text(skill),
-                    );
-                  }).toList(),
-                  decoration: _inputDecoration('Skill Title').copyWith(
-                    prefixIcon: Icon(Icons.school_outlined, color: AppColors.primary),
-                  ),
-                  validator: (value) =>
-                  value == null || value.isEmpty ? 'Please select a skill to teach' : null,
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedSkill = value;
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Description
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: TextFormField(
-                  controller: _descriptionController,
-                  maxLines: 3,
-                  decoration: _inputDecoration('Skill Description')
-                      .copyWith(
-                    prefixIcon: Icon(Icons.description_outlined, color: AppColors.primary),
-                    alignLabelWithHint: true,
-                  ),
-                  validator: (value) => value!.isEmpty ? 'Please enter a description' : null,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              Text(
-                "Skill Details",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Expertise Level Dropdown
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.shade300),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16),
-                      child: Icon(Icons.grade_outlined, color: AppColors.primary),
-                    ),
-                    Expanded(
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _expertlevel,
-                          isExpanded: true,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
-                          dropdownColor: Colors.white,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "Share your expertise and connect with learners",
                           style: TextStyle(
                             color: Colors.grey[800],
-                            fontSize: 16,
+                            fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 'Beginner', child: Text('Beginner')),
-                            DropdownMenuItem(value: 'Intermediate', child: Text('Intermediate')),
-                            DropdownMenuItem(value: 'Expert', child: Text('Expert')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _expertlevel = value!;
-                            });
-                          },
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Total Classes
-              Container(
-                decoration: _getBoxDecoration(),
-                child: TextFormField(
-                  controller: _totalClassesController,
-                  keyboardType: TextInputType.number,
-                  decoration: _inputDecoration('Total Classes')
-                      .copyWith(
-                    prefixIcon: Icon(Icons.calendar_today_outlined, color: AppColors.primary),
-                  ),
-                  validator: (value) => value!.isEmpty ? 'Please enter total classes' : null,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Duration
-              Container(
-                decoration: _getBoxDecoration(),
-                child: TextFormField(
-                  controller: _durationController,
-                  decoration: _inputDecoration('Duration per Class')
-                      .copyWith(
-                    prefixIcon: Icon(Icons.timer_outlined, color: AppColors.primary),
-                    hintText: 'e.g. 1 hour',
-                  ),
-                  validator: (value) => value!.isEmpty ? 'Please enter duration' : null,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              Text(
-                "Exchange & Pricing",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Exchange Skills
-              Container(
-                decoration: _getBoxDecoration(),
-                child: TextFormField(
-                  controller: _exchangeSkillController,
-                  decoration: _inputDecoration('Skills to Exchange')
-                      .copyWith(
-                    prefixIcon: Icon(Icons.swap_horiz_outlined, color: AppColors.primary),
-                    hintText: 'Comma separated skills',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Price
-              Container(
-                decoration: _getBoxDecoration(),
-                child: TextFormField(
-                  controller: _priceController,
-                  keyboardType: TextInputType.number,
-                  decoration: _inputDecoration('Price (PKR)')
-                      .copyWith(
-                    prefixIcon: Icon(Icons.attach_money_outlined, color: AppColors.primary),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Save Button
-              Container(
-                width: double.infinity,
-                height: 55,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary,
-                      AppColors.primary.withOpacity(0.8),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
                 ),
-                child: ElevatedButton.icon(
-                  onPressed: _saveSkill,
-                  icon: const Icon(Icons.save_rounded, color: Colors.white),
-                  label: const Text(
-                    'Save Skill',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                const SizedBox(height: 24),
+
+                Text(
+                  "Basic Information",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 16),
+
+                // Skill Title as Dropdown
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedSkill,
+                    items: _skillsToTeach.map((skill) {
+                      return DropdownMenuItem(
+                        value: skill,
+                        child: Text(skill),
+                      );
+                    }).toList(),
+                    decoration: _inputDecoration('Skill Title').copyWith(
+                      prefixIcon: Icon(Icons.school_outlined, color: AppColors.primary),
+                    ),
+                    validator: (value) =>
+                    value == null || value.isEmpty
+                        ? 'Please select a skill to teach'
+                        : null,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedSkill = value;
+                      });
+                    },
+                    isExpanded: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Description
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: TextFormField(
+                    controller: _descriptionController,
+                    maxLines: 3,
+                    decoration: _inputDecoration('Skill Description').copyWith(
+                      prefixIcon: Icon(Icons.description_outlined, color: AppColors.primary),
+                      alignLabelWithHint: true,
+                    ),
+                    validator: (value) => value!.isEmpty ? 'Please enter a description' : null,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                Text(
+                  "Skill Details",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Expertise Level Dropdown
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade300),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: Icon(Icons.grade_outlined, color: AppColors.primary),
+                      ),
+                      Expanded(
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _expertlevel,
+                            isExpanded: true,
+                            icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+                            dropdownColor: Colors.white,
+                            style: TextStyle(
+                              color: Colors.grey[800],
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 'Beginner', child: Text('Beginner')),
+                              DropdownMenuItem(value: 'Intermediate', child: Text('Intermediate')),
+                              DropdownMenuItem(value: 'Expert', child: Text('Expert')),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _expertlevel = value!;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Total Classes
+                Container(
+                  decoration: _getBoxDecoration(),
+                  child: TextFormField(
+                    controller: _totalClassesController,
+                    keyboardType: TextInputType.number,
+                    decoration: _inputDecoration('Total Classes').copyWith(
+                      prefixIcon: Icon(Icons.calendar_today_outlined, color: AppColors.primary),
+                    ),
+                    validator: (value) => value!.isEmpty ? 'Please enter total classes' : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Duration
+                Container(
+                  decoration: _getBoxDecoration(),
+                  child: TextFormField(
+                    controller: _durationController,
+                    decoration: _inputDecoration('Duration per Class').copyWith(
+                      prefixIcon: Icon(Icons.timer_outlined, color: AppColors.primary),
+                      hintText: 'e.g. 1 hour',
+                    ),
+                    validator: (value) => value!.isEmpty ? 'Please enter duration' : null,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                Text(
+                  "Exchange & Pricing",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // --- Skills to Exchange dropdown for role "both" ---
+                if (userRole == "both")
+                  Container(
+                    decoration: _getBoxDecoration(),
+                    child: _skillsWantToLearn.isEmpty
+                        ? Text(
+                      "No skills to exchange. Please select skills to learn in your profile.",
+                      style: TextStyle(color: Colors.red),
+                    )
+                        : DropdownButtonFormField<String>(
+                      value: _selectedExchangeSkill,
+                      items: _skillsWantToLearn.map((skill) {
+                        return DropdownMenuItem(
+                          value: skill,
+                          child: Text(skill),
+                        );
+                      }).toList(),
+                      decoration: _inputDecoration('Skills to Exchange').copyWith(
+                        prefixIcon: Icon(Icons.swap_horiz_outlined, color: AppColors.primary),
+                        hintText: 'Select a skill you want to exchange',
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedExchangeSkill = value;
+                        });
+                      },
+                      isExpanded: true,
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Please select a skill to exchange'
+                          : null,
+                    ),
+                  ),
+
+                // --- Price field only for role "instructor" ---
+                if (userRole == "instructor")
+                  Container(
+                    decoration: _getBoxDecoration(),
+                    child: TextFormField(
+                      controller: _priceController,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecoration('Price (PKR)').copyWith(
+                        prefixIcon: Icon(Icons.attach_money_outlined, color: AppColors.primary),
+                      ),
+                      validator: (value) => value!.isEmpty ? 'Please enter price' : null,
+                    ),
+                  ),
+
+                const SizedBox(height: 32),
+
+                // Save Button
+                Container(
+                  width: double.infinity,
+                  height: 55,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary,
+                        AppColors.primary.withOpacity(0.8),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: _saveSkill,
+                    icon: const Icon(Icons.save_rounded, color: Colors.white),
+                    label: const Text(
+                      'Save Skill',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
