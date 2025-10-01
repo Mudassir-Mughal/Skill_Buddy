@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'Addskill.dart';
+import 'home.dart';
 import 'theme.dart';
 
 class MySkillsPage extends StatefulWidget {
@@ -147,17 +148,18 @@ class _MySkillsPageState extends State<MySkillsPage> {
                       IconButton(
                         icon: const Icon(Icons.edit_note_rounded),
                         color: AppColors.primary,
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AddSkillPage(
-                                existingData: skill,
-                                skillId: skill['skillId'],
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => HomePage(
+                                  initialIndex: 2,
+                                  existingData: skill,
+                                  skillId: skill['skillId'],
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          }
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),

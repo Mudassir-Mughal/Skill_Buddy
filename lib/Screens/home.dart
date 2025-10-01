@@ -14,18 +14,23 @@ import 'ViewRequest.dart';
 import 'package:animations/animations.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final int initialIndex;
+  final Map<String, dynamic>? existingData;
+  final String? skillId;
+
+  const HomePage({super.key, this.initialIndex = 0,this.existingData, this.skillId});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  String userRole = "both";
 
-  late final List<Widget> _pages;
+  List<Widget> _pages = [];
 
   static const List<String> _pageTitles = [
     'Home',
@@ -38,20 +43,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
-    _pages = [
-      HomeScreenContent(),
-      MySkillsPage(),
-      AddSkillPage(),
-      if (currentUserId != null)
-        ChatListPage(currentUserId: currentUserId!)
-      else
-        const Center(child: Text('User not logged in')),
-      ViewRequestsPage(role: "Both"),
-    ];
+    _selectedIndex = widget.initialIndex;
+    _fetchUserRoleAndSetupPages();
   }
 
-  // Helper widget that listens to the current user's Firestore document
-  // and returns a CircleAvatar (with image if available) and an optional name.
+  Future<void> _fetchUserRoleAndSetupPages() async {
+    if (currentUserId == null) return;
+    final doc = await FirebaseFirestore.instance.collection('users').doc(currentUserId).get();
+    final data = doc.data();
+    userRole = (data?['role'] ?? 'both').toString().toLowerCase();
+
+    setState(() {
+      _pages = [
+        HomeScreenContent(),
+        MySkillsPage(),
+        AddSkillPage(
+          existingData: widget.existingData,
+          skillId: widget.skillId,
+        ),
+        if (currentUserId != null)
+          ChatListPage(currentUserId: currentUserId!)
+        else
+          const Center(child: Text('User not logged in')),
+        ViewRequestsPage(role: userRole), // dynamically instructor, learner, both
+      ];
+    });
+  }
   Widget _profileAvatar({double radius = 20, bool showBorder = true}) {
     if (currentUserId == null) {
       return CircleAvatar(
@@ -101,7 +118,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final width = MediaQuery.of(context).size.width;
     final isWeb = width >= 900;
 
-    // --- AppBar ---
     final appBar = PreferredSize(
       preferredSize: const Size.fromHeight(70),
       child: Container(
@@ -147,25 +163,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
 
-    // --- Main Content ---
     Widget mainContent;
     if (!isWeb) {
-      mainContent = PageTransitionSwitcher(
-        transitionBuilder: (child, animation, secondaryAnimation) {
-          return FadeThroughTransition(
-            animation: animation,
-            secondaryAnimation: secondaryAnimation,
-            child: child,
-          );
-        },
-        child: _pages[_selectedIndex],
+      mainContent = IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
       );
     } else {
-      // Responsive web layout: horizontally arranges navigation and content
       mainContent = Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left: Vertical Navigation
           Container(
             width: 210,
             height: double.infinity,
@@ -187,7 +194,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
             child: _buildWebNav(theme),
           ),
-          // Center: Main Section
           Expanded(
             child: Container(
               alignment: Alignment.topCenter,
@@ -221,22 +227,113 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       backgroundColor: theme.colorScheme.background,
       appBar: isWeb ? appBar : appBar,
       body: mainContent,
-      bottomNavigationBar: isWeb ? null : _buildBottomNav(theme),
+      bottomNavigationBar: !isWeb
+          ? Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              spreadRadius: 0,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: NavigationBar(
+            height: 65,
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (int index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            backgroundColor: Colors.transparent,
+            indicatorColor: theme.colorScheme.primary.withOpacity(0.15),
+            destinations: [
+              NavigationDestination(
+                icon: Icon(
+                  Icons.home_outlined,
+                  color: _selectedIndex == 0
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+                selectedIcon: Icon(
+                  Icons.home_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(
+                  Icons.workspace_premium_outlined,
+                  color: _selectedIndex == 1
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+                selectedIcon: Icon(
+                  Icons.workspace_premium_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                label: 'Skills',
+              ),
+              NavigationDestination(
+                icon: Icon(
+                  Icons.add_circle_outline,
+                  color: _selectedIndex == 2
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+                selectedIcon: Icon(
+                  Icons.add_circle_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                label: 'Add',
+              ),
+              NavigationDestination(
+                icon: Icon(
+                  Icons.chat_bubble_outline,
+                  color: _selectedIndex == 3
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+                selectedIcon: Icon(
+                  Icons.chat_bubble,
+                  color: theme.colorScheme.primary,
+                ),
+                label: 'Chat',
+              ),
+              NavigationDestination(
+                icon: Icon(
+                  Icons.inbox_outlined,
+                  color: _selectedIndex == 4
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+                selectedIcon: Icon(
+                  Icons.inbox_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                label: 'Requests',
+              ),
+            ],
+          ),
+        ),
+      )
+          : null,
     );
   }
 
-  // --- Web Navigation ---
   Widget _buildWebNav(ThemeData theme) {
     return Column(
       children: [
         const SizedBox(height: 28),
-        // App logo or profile (now dynamic)
         GestureDetector(
           onTap: () => _showProfileCard(context),
           child: _profileAvatar(radius: 36),
         ),
         const SizedBox(height: 36),
-        // Navigation Items
         for (var i = 0; i < _pageTitles.length; i++)
           _buildWebNavItem(
             icon: _getNavIcon(i, false),
@@ -335,7 +432,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ? FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots()
               : const Stream.empty(),
           builder: (context, snapshot) {
-            // build default values first
             String displayName = 'User';
             String email = '';
             String? photoUrl;
@@ -365,7 +461,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Profile Header with Gradient and image/name
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -418,8 +513,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       ],
                     ),
                   ),
-
-                  // Menu Items
                   _buildProfileMenuItem(
                     icon: Icons.person_outline,
                     title: 'My Profile',
@@ -529,10 +622,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         await googleSignIn.signOut();
       } catch (_) {}
 
-      // Sign out from Firebase
       await FirebaseAuth.instance.signOut();
 
-      // Delay navigation to allow auth state to update & widget to rebuild
       Future.delayed(Duration.zero, () {
         if (context.mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -562,97 +653,5 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       );
     }
-  }
-
-  Widget _buildBottomNav(ThemeData theme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            spreadRadius: 0,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: NavigationBar(
-          height: 65,
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: _onItemTapped,
-          backgroundColor: Colors.transparent,
-          indicatorColor: theme.colorScheme.primary.withOpacity(0.15),
-          destinations: [
-            _buildNavDestination(
-              icon: Icons.home_outlined,
-              selectedIcon: Icons.home_rounded,
-              label: 'Home',
-              index: 0,
-              theme: theme,
-            ),
-            _buildNavDestination(
-              icon: Icons.workspace_premium_outlined,
-              selectedIcon: Icons.workspace_premium_rounded,
-              label: 'Skills',
-              index: 1,
-              theme: theme,
-            ),
-            _buildNavDestination(
-              icon: Icons.add_circle_outline,
-              selectedIcon: Icons.add_circle_rounded,
-              label: 'Add',
-              index: 2,
-              theme: theme,
-            ),
-            _buildNavDestination(
-              icon: Icons.chat_bubble_outline,
-              selectedIcon: Icons.chat_bubble,
-              label: 'Chat',
-              index: 3,
-              theme: theme,
-            ),
-            _buildNavDestination(
-              icon: Icons.inbox_outlined,
-              selectedIcon: Icons.inbox_rounded,
-              label: 'Requests',
-              index: 4,
-              theme: theme,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavDestination({
-    required IconData icon,
-    required IconData selectedIcon,
-    required String label,
-    required int index,
-    required ThemeData theme,
-  }) {
-    final isSelected = _selectedIndex == index;
-
-    return NavigationDestination(
-      icon: Icon(
-        icon,
-        color: isSelected
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface.withOpacity(0.6),
-      ),
-      selectedIcon: Icon(
-        selectedIcon,
-        color: theme.colorScheme.primary,
-      ),
-      label: label,
-    );
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
   }
 }

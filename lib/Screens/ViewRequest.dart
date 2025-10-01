@@ -10,37 +10,72 @@ class ViewRequestsPage extends StatelessWidget {
   const ViewRequestsPage({Key? key, required this.role}) : super(key: key);
 
   @override
+  @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser!.uid;
-    final isStudent = role.toLowerCase() == 'student';
+    final userRole = role.toLowerCase();
 
-    return isStudent
-        ? Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _customAppBar(
-        title: 'Sent Requests',
-        showTabs: false,
-        context: context,
-      ),
-      body: _buildSentRequestsTab(currentUserId, context),
-    )
-        : DefaultTabController(
-      length: 2,
-      child: Scaffold(
+    if (userRole == 'student') {
+      // Only show Sent Requests
+      return Scaffold(
         backgroundColor: AppColors.background,
         appBar: _customAppBar(
-          title: '',
-          showTabs: true,
+          title: 'Sent Requests',
+          showTabs: false,
           context: context,
         ),
-        body: TabBarView(
-          children: [
-            _buildReceivedRequestsTab(currentUserId, context),
-            _buildSentRequestsTab(currentUserId, context),
-          ],
+        body: _buildSentRequestsTab(currentUserId, context),
+      );
+    } else if (userRole == 'instructor') {
+      // Only show Received Requests
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: _customAppBar(
+          title: 'Received Requests',
+          showTabs: false,
+          context: context,
         ),
-      ),
-    );
+        body: _buildReceivedRequestsTab(currentUserId, context),
+      );
+    } else if (userRole == 'both') {
+      // Show both tabs
+      return DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: _customAppBar(
+            title: '',
+            showTabs: true,
+            context: context,
+          ),
+          body: TabBarView(
+            children: [
+              _buildReceivedRequestsTab(currentUserId, context),
+              _buildSentRequestsTab(currentUserId, context),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Fallback: show both tabs (or handle other roles gracefully)
+      return DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: _customAppBar(
+            title: '',
+            showTabs: true,
+            context: context,
+          ),
+          body: TabBarView(
+            children: [
+              _buildReceivedRequestsTab(currentUserId, context),
+              _buildSentRequestsTab(currentUserId, context),
+            ],
+          ),
+        ),
+      );
+    }
   }
 
   PreferredSizeWidget _customAppBar({

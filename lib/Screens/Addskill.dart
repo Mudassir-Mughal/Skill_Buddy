@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'Myskills.dart';
+import 'home.dart';
 import 'theme.dart';
 
 class AddSkillPage extends StatefulWidget {
@@ -54,7 +55,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
     final data = doc.data() ?? {};
     setState(() {
       _skillsToTeach = (data['skillsToTeach'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
-      // Make sure you use the same field name your SetProfilePage uses for "skills to learn":
       _skillsWantToLearn = (data['skillsToLearn'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
       userRole = ((data['role'] ?? "both") as String).toLowerCase();
       if (_selectedSkill == null && _skillsToTeach.isNotEmpty) {
@@ -104,7 +104,11 @@ class _AddSkillPageState extends State<AddSkillPage> {
         );
       }
 
-      Navigator.pop(context, 1); // return index = 1
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => HomePage(initialIndex: 1)), // MySkills tab
+            (route) => false,
+      );
     }
   }
 
@@ -208,7 +212,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Material( // Ensures dropdown overlays are not clipped
+      body: Material(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Form(
@@ -216,7 +220,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Section
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -261,7 +264,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Skill Title as Dropdown
                 Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
@@ -298,7 +300,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Description
                 Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
@@ -332,7 +333,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Expertise Level Dropdown
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -382,7 +382,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Total Classes
                 Container(
                   decoration: _getBoxDecoration(),
                   child: TextFormField(
@@ -396,7 +395,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Duration
                 Container(
                   decoration: _getBoxDecoration(),
                   child: TextFormField(
@@ -420,7 +418,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // --- Skills to Exchange dropdown for role "both" ---
                 if (userRole == "both")
                   Container(
                     decoration: _getBoxDecoration(),
@@ -453,7 +450,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
                     ),
                   ),
 
-                // --- Price field only for role "instructor" ---
                 if (userRole == "instructor")
                   Container(
                     decoration: _getBoxDecoration(),
@@ -469,7 +465,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
 
                 const SizedBox(height: 32),
 
-                // Save Button
                 Container(
                   width: double.infinity,
                   height: 55,
