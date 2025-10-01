@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:skill_buddy_fyp/Screens/videocall.dart';
+import '../Service/similarity_test.dart';
 import '../Service/video_api.dart';
 import 'SkillCard.dart';
 import 'theme.dart';
@@ -15,20 +16,41 @@ class HomeScreenContent extends StatefulWidget {
   State<HomeScreenContent> createState() => _HomeScreenContentState();
 }
 
+class MatchUser {
+  final String uid;
+  final String name;
+  final double similarity;
+  final List<String> skillsToTeach;
+  final List<String> skillsToLearn;
+  MatchUser({
+    required this.uid,
+    required this.name,
+    required this.similarity,
+    required this.skillsToTeach,
+    required this.skillsToLearn,
+  });
+}
+
 class _HomeScreenContentState extends State<HomeScreenContent> {
   String fullName = '';
   String currentUserName = '';
+  String currentUserRole = '';
+  List<String> currentUserSkillsToLearn = [];
+  List<String> currentUserSkillsToTeach = [];
   bool isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   final currentUserId = FirebaseAuth.instance.currentUser!.uid;
 
+  late Future<List<MatchUser>> _similarityMatchesFuture;
+
   @override
   void initState() {
     super.initState();
-    fetchUserFullName();
+    fetchUserFullNameAndSkills();
+    _similarityMatchesFuture = fetchSimilarityMatches();
   }
 
-  Future<void> fetchUserFullName() async {
+  Future<void> fetchUserFullNameAndSkills() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
@@ -37,17 +59,24 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             .doc(user.uid)
             .get();
 
+        final data = doc.data();
         setState(() {
-          fullName = doc.data()?['Fullname'] ?? 'User';
-          currentUserName = doc.data()?['Fullname'] ?? 'User';
+          fullName = data?['Fullname'] ?? 'User';
+          currentUserName = data?['Fullname'] ?? 'User';
+          currentUserRole = data?['role'] ?? '';
+          currentUserSkillsToLearn = List<String>.from(data?['skillsToLearn'] ?? []);
+          currentUserSkillsToTeach = List<String>.from(data?['skillsToTeach'] ?? []);
           isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint("Error fetching Fullname: $e");
+      debugPrint("Error fetching Fullname or skills: $e");
       setState(() {
         fullName = 'User';
         currentUserName = 'User';
+        currentUserRole = '';
+        currentUserSkillsToLearn = [];
+        currentUserSkillsToTeach = [];
         isLoading = false;
       });
     }
@@ -65,9 +94,29 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
-  /// Firestore query for lessons where current user is instructor or student
+  Future<List<MatchUser>> fetchSimilarityMatches() async {
+    final List<Map<String, dynamic>> rawMatches = await MatchService().findMatches();
+
+    List<MatchUser> matches = [];
+    for (var m in rawMatches) {
+      if ((m['similarity'] ?? 0.0) <= 0.0) continue; // filter out zero similarity
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(m['uid']).get();
+      final data = userDoc.data();
+      final skillsToTeach = List<String>.from(data?['skillsToTeach'] ?? []);
+      final skillsToLearn = List<String>.from(data?['skillsToLearn'] ?? []);
+
+      matches.add(MatchUser(
+        uid: m['uid'],
+        name: m['name'],
+        similarity: m['similarity'],
+        skillsToTeach: skillsToTeach,
+        skillsToLearn: skillsToLearn,
+      ));
+    }
+    return matches;
+  }
+
   Stream<List<QueryDocumentSnapshot>> fetchLessonsRealtime() {
-    // If your Firestore supports "or" queries (Firebase 9.0+), use this:
     return FirebaseFirestore.instance
         .collection('lessons')
         .where('status', isEqualTo: 'scheduled')
@@ -85,7 +134,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       DateTime.parse("$date $time".trim().replaceAll('/', '-'));
       return lessonDateTime.isAfter(DateTime.now());
     } catch (e) {
-      return true; // fallback: allow if parsing fails
+      return true;
     }
   }
 
@@ -217,8 +266,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
-  /// This function will update `enabled` if the lesson's start time has come.
-  /// Call this inside each lesson card's build method.
   Future<void> checkAndEnableLesson(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final enabled = data['enabled'] == true;
@@ -228,8 +275,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     if (!enabled && date != '' && startTimeRaw != '') {
       try {
         final start = DateTime.parse("$date $startTimeRaw".replaceAll('/', '-'));
-        if (DateTime.now().isAfter(start) || DateTime.now().isAtSameMomentAs(start)) {
-          // Only update if not already enabled
+        if (DateTime.now().isAfter(start) ||
+            DateTime.now().isAtSameMomentAs(start)) {
           await doc.reference.update({'enabled': true});
         }
       } catch (_) {}
@@ -260,11 +307,11 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             return time;
           }
 
-          // Sort lessons by start time ascending (optional)
           lessons.sort((a, b) {
             final aDate = DateTime.tryParse(a['date'] ?? '');
             final bDate = DateTime.tryParse(b['date'] ?? '');
-            return (aDate ?? DateTime.now()).compareTo(bDate ?? DateTime.now());
+            return (aDate ?? DateTime.now())
+                .compareTo(bDate ?? DateTime.now());
           });
 
           return SingleChildScrollView(
@@ -272,7 +319,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Welcome Section (unchanged)
+                // Welcome Section
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -310,7 +357,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      // Search Box
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -356,14 +402,13 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     ],
                   ),
                 ),
-
                 // Main Content
                 Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Explore Banner (unchanged)
+                      // Explore Banner
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -378,7 +423,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: theme.colorScheme.primary.withOpacity(0.3),
+                              color:
+                              theme.colorScheme.primary.withOpacity(0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 4),
                             ),
@@ -420,7 +466,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                   Text(
                                     "Explore our most popular skills",
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
+                                      color:
+                                      Colors.white.withOpacity(0.9),
                                       fontSize: 14,
                                     ),
                                   ),
@@ -457,11 +504,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // --- LESSON CARDS OR NO LESSON ---
                       if (lessons.isEmpty)
                         Container(
-                          padding: const EdgeInsets.symmetric(vertical: 32),
+                          padding:
+                          const EdgeInsets.symmetric(vertical: 32),
                           alignment: Alignment.center,
                           child: Text(
                             "No upcoming lessons",
@@ -474,45 +520,58 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                       else
                         Column(
                           children: lessons.map((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
+                            final data =
+                            doc.data() as Map<String, dynamic>;
                             final lessonId = doc.id;
                             final outline = data['outline'] ?? '';
                             final date = data['date'] ?? '';
                             final startTimeRaw = data['start_time'] ?? '';
                             final endTimeRaw = data['end_time'] ?? '';
                             final instructorId = data['instructorId'];
-                            final isInstructor = instructorId == currentUserId;
-                            final canEditDelete = isInstructor && isLessonEditable(date, startTimeRaw);
+                            final isInstructor =
+                                instructorId == currentUserId;
+                            final canEditDelete = isInstructor &&
+                                isLessonEditable(date, startTimeRaw);
 
-                            final startTimePretty = formatTime(startTimeRaw);
-                            final endTimePretty = formatTime(endTimeRaw);
-                            final timeRange = (startTimePretty.isNotEmpty && endTimePretty.isNotEmpty)
+                            final startTimePretty =
+                            formatTime(startTimeRaw);
+                            final endTimePretty =
+                            formatTime(endTimeRaw);
+                            final timeRange = (startTimePretty.isNotEmpty &&
+                                endTimePretty.isNotEmpty)
                                 ? "$startTimePretty - $endTimePretty"
-                                : (startTimePretty.isNotEmpty ? startTimePretty : endTimePretty);
+                                : (startTimePretty.isNotEmpty
+                                ? startTimePretty
+                                : endTimePretty);
 
-                            final lessonOver = isLessonOver(date, endTimeRaw);
+                            final lessonOver =
+                            isLessonOver(date, endTimeRaw);
                             final peerId = getPeerId(data);
 
                             final enabled = data['enabled'] == true;
 
-                            // --- KEY LOGIC: AUTOMAICALLY ENABLE IF TIME HAS COME ---
                             checkAndEnableLesson(doc);
 
                             return Container(
-                              margin: const EdgeInsets.only(bottom: 20),
+                              margin:
+                              const EdgeInsets.only(bottom: 20),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    theme.colorScheme.primary.withOpacity(0.10),
-                                    theme.colorScheme.secondary.withOpacity(0.08),
+                                    theme.colorScheme.primary
+                                        .withOpacity(0.10),
+                                    theme.colorScheme.secondary
+                                        .withOpacity(0.08),
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
-                                borderRadius: BorderRadius.circular(18),
+                                borderRadius:
+                                BorderRadius.circular(18),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: theme.colorScheme.primary.withOpacity(0.07),
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.07),
                                     blurRadius: 10,
                                     offset: const Offset(0, 5),
                                   ),
@@ -520,28 +579,37 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                               ),
                               child: Material(
                                 color: Colors.transparent,
-                                borderRadius: BorderRadius.circular(18),
+                                borderRadius:
+                                BorderRadius.circular(18),
                                 child: InkWell(
-                                  borderRadius: BorderRadius.circular(18),
+                                  borderRadius:
+                                  BorderRadius.circular(18),
                                   onTap: () {},
                                   child: Padding(
                                     padding: const EdgeInsets.all(12),
                                     child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                       children: [
                                         Container(
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,
                                             gradient: LinearGradient(
                                               colors: [
-                                                theme.colorScheme.secondary.withOpacity(0.3),
-                                                theme.colorScheme.primary,
+                                                theme.colorScheme
+                                                    .secondary
+                                                    .withOpacity(
+                                                    0.3),
+                                                theme.colorScheme
+                                                    .primary,
                                               ],
                                               begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
+                                              end:
+                                              Alignment.bottomRight,
                                             ),
                                           ),
-                                          padding: const EdgeInsets.all(12),
+                                          padding:
+                                          const EdgeInsets.all(12),
                                           child: Icon(
                                             Icons.school_rounded,
                                             color: Colors.white,
@@ -551,101 +619,168 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                            CrossAxisAlignment
+                                                .start,
                                             children: [
                                               Text(
                                                 outline,
-                                                style: theme.textTheme.titleMedium?.copyWith(
-                                                  fontWeight: FontWeight.w200,
-                                                  color: theme.colorScheme.primary,
+                                                style: theme
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                  fontWeight:
+                                                  FontWeight.w200,
+                                                  color: theme
+                                                      .colorScheme
+                                                      .primary,
                                                 ),
                                                 maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
+                                                overflow: TextOverflow
+                                                    .ellipsis,
                                               ),
-                                              const SizedBox(height: 6),
+                                              const SizedBox(
+                                                  height: 6),
                                               Row(
                                                 children: [
-                                                  Icon(Icons.calendar_today, size: 16, color: theme.colorScheme.secondary),
-                                                  const SizedBox(width: 4),
+                                                  Icon(
+                                                      Icons
+                                                          .calendar_today,
+                                                      size: 16,
+                                                      color: theme
+                                                          .colorScheme
+                                                          .secondary),
+                                                  const SizedBox(
+                                                      width: 4),
                                                   Text(
                                                     date,
-                                                    style: theme.textTheme.bodyMedium,
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodyMedium,
                                                   ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 6),
+                                              const SizedBox(
+                                                  height: 6),
                                               Row(
                                                 children: [
-                                                  Icon(Icons.access_time, size: 16, color: theme.colorScheme.secondary),
-                                                  const SizedBox(width: 4),
+                                                  Icon(
+                                                      Icons
+                                                          .access_time,
+                                                      size: 16,
+                                                      color: theme
+                                                          .colorScheme
+                                                          .secondary),
+                                                  const SizedBox(
+                                                      width: 4),
                                                   Text(
                                                     timeRange,
-                                                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                        fontWeight:
+                                                        FontWeight
+                                                            .w600),
                                                   ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 10),
+                                              const SizedBox(
+                                                  height: 10),
                                               if (lessonOver)
                                                 SizedBox(
-                                                  width: double.infinity,
-                                                  child: ElevatedButton.icon(
-                                                    icon: Icon(Icons.delete, color: Colors.white),
+                                                  width:
+                                                  double.infinity,
+                                                  child:
+                                                  ElevatedButton
+                                                      .icon(
+                                                    icon: Icon(
+                                                        Icons.delete,
+                                                        color: Colors
+                                                            .white),
                                                     label: Text(
                                                       "Delete",
-                                                      style: TextStyle(
-                                                        color: Colors.white,
-                                                        fontWeight: FontWeight.bold,
+                                                      style:
+                                                      TextStyle(
+                                                        color: Colors
+                                                            .white,
+                                                        fontWeight:
+                                                        FontWeight
+                                                            .bold,
                                                       ),
                                                     ),
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.red,
-                                                      shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(30),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                      Colors.red,
+                                                      shape:
+                                                      RoundedRectangleBorder(
+                                                        borderRadius:
+                                                        BorderRadius
+                                                            .circular(
+                                                            30),
                                                       ),
-                                                      padding: EdgeInsets.symmetric(vertical: 10),
+                                                      padding: EdgeInsets
+                                                          .symmetric(
+                                                          vertical:
+                                                          10),
                                                     ),
-                                                    onPressed: () async {
-                                                      await _onDeleteLesson(context, lessonId);
+                                                    onPressed:
+                                                        () async {
+                                                      await _onDeleteLesson(
+                                                          context,
+                                                          lessonId);
                                                     },
                                                   ),
                                                 )
                                               else
                                                 SizedBox(
-                                                  width: double.infinity,
-                                                  child: ElevatedButton.icon(
+                                                  width:
+                                                  double.infinity,
+                                                  child:
+                                                  ElevatedButton
+                                                      .icon(
                                                     icon: Icon(
-                                                      Icons.video_call_rounded,
+                                                      Icons
+                                                          .video_call_rounded,
                                                       color: enabled
-                                                          ? Colors.white
-                                                          : Colors.grey.shade400,
+                                                          ? Colors
+                                                          .white
+                                                          : Colors
+                                                          .grey
+                                                          .shade400,
                                                     ),
                                                     label: Text(
-                                                      enabled ? "Join Call" : "Not Active",
+                                                      enabled
+                                                          ? "Join Call"
+                                                          : "Not Active",
                                                       style: TextStyle(
                                                         color: enabled
-                                                            ? Colors.white
-                                                            : Colors.grey.shade400,
-                                                        fontWeight: FontWeight.bold,
+                                                            ? Colors
+                                                            .white
+                                                            : Colors
+                                                            .grey
+                                                            .shade400,
+                                                        fontWeight:
+                                                        FontWeight
+                                                            .bold,
                                                       ),
                                                     ),
-                                                    onPressed: enabled
+                                                    onPressed:
+                                                    enabled
                                                         ? () async {
-                                                      // 1. Lesson doc se roomId fetch karo (DO NOT call createMeeting here!)
                                                       final lessonSnap = await FirebaseFirestore.instance
                                                           .collection('lessons')
                                                           .doc(lessonId)
                                                           .get();
                                                       final lessonData = lessonSnap.data();
-                                                      final roomId = lessonData?['roomId']; // Ye wahi hona chahiye jo schedule karte waqt save kiya tha
-
+                                                      final roomId = lessonData?['roomId'];
                                                       if (roomId == null) {
                                                         ScaffoldMessenger.of(context).showSnackBar(
                                                           SnackBar(content: Text("Room ID not found for this lesson.")),
                                                         );
                                                         return;
                                                       }
-
-                                                      // 2. Navigate to MeetingScreen
                                                       Navigator.push(
                                                         context,
                                                         MaterialPageRoute(
@@ -657,10 +792,16 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                                       );
                                                     }
                                                         : null,
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: enabled
-                                                          ? theme.colorScheme.primary
-                                                          : Colors.grey.shade200,
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                      enabled
+                                                          ? theme
+                                                          .colorScheme
+                                                          .primary
+                                                          : Colors
+                                                          .grey
+                                                          .shade200,
                                                       shadowColor: enabled
                                                           ? theme.colorScheme.primary.withOpacity(0.18)
                                                           : Colors.transparent,
@@ -679,39 +820,72 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                           PopupMenuButton<String>(
                                             icon: Icon(
                                               Icons.more_vert_rounded,
-                                              color: theme.colorScheme.secondary,
+                                              color: theme
+                                                  .colorScheme
+                                                  .secondary,
                                             ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(18),
+                                            shape:
+                                            RoundedRectangleBorder(
+                                              borderRadius:
+                                              BorderRadius.circular(
+                                                  18),
                                             ),
                                             color: theme.cardColor,
                                             elevation: 8,
                                             onSelected: (value) {
                                               if (value == 'edit') {
-                                                _onEditLesson(context, data, lessonId);
-                                              } else if (value == 'delete') {
-                                                _onDeleteLesson(context, lessonId);
+                                                _onEditLesson(context,
+                                                    data, lessonId);
+                                              } else if (value ==
+                                                  'delete') {
+                                                _onDeleteLesson(
+                                                    context,
+                                                    lessonId);
                                               }
                                             },
-                                            itemBuilder: (context) => [
+                                            itemBuilder:
+                                                (context) => [
                                               PopupMenuItem(
                                                 value: 'edit',
                                                 child: Row(
                                                   children: [
                                                     Container(
-                                                      decoration: BoxDecoration(
-                                                        color: theme.colorScheme.primary.withOpacity(0.12),
-                                                        shape: BoxShape.circle,
+                                                      decoration:
+                                                      BoxDecoration(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .primary
+                                                            .withOpacity(
+                                                            0.12),
+                                                        shape: BoxShape
+                                                            .circle,
                                                       ),
-                                                      padding: const EdgeInsets.all(6),
-                                                      child: Icon(Icons.edit_rounded, color: theme.colorScheme.primary, size: 20),
+                                                      padding:
+                                                      const EdgeInsets
+                                                          .all(
+                                                          6),
+                                                      child: Icon(
+                                                          Icons
+                                                              .edit_rounded,
+                                                          color: theme
+                                                              .colorScheme
+                                                              .primary,
+                                                          size: 20),
                                                     ),
-                                                    const SizedBox(width: 16),
+                                                    const SizedBox(
+                                                        width: 16),
                                                     Text(
                                                       "Edit",
-                                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                                        fontWeight: FontWeight.w600,
-                                                        color: theme.colorScheme.primary,
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.copyWith(
+                                                        fontWeight:
+                                                        FontWeight
+                                                            .w600,
+                                                        color: theme
+                                                            .colorScheme
+                                                            .primary,
                                                       ),
                                                     ),
                                                   ],
@@ -722,28 +896,60 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                                 child: Row(
                                                   children: [
                                                     Container(
-                                                      decoration: BoxDecoration(
-                                                        color: theme.colorScheme.error.withOpacity(0.12),
-                                                        shape: BoxShape.circle,
+                                                      decoration:
+                                                      BoxDecoration(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .error
+                                                            .withOpacity(
+                                                            0.12),
+                                                        shape: BoxShape
+                                                            .circle,
                                                       ),
-                                                      padding: const EdgeInsets.all(6),
-                                                      child: Icon(Icons.delete_rounded, color: theme.colorScheme.error, size: 20),
+                                                      padding:
+                                                      const EdgeInsets
+                                                          .all(
+                                                          6),
+                                                      child: Icon(
+                                                          Icons
+                                                              .delete_rounded,
+                                                          color: theme
+                                                              .colorScheme
+                                                              .error,
+                                                          size: 20),
                                                     ),
-                                                    const SizedBox(width: 16),
+                                                    const SizedBox(
+                                                        width: 16),
                                                     Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .start,
                                                       children: [
                                                         Text(
                                                           "Delete",
-                                                          style: theme.textTheme.bodyMedium?.copyWith(
-                                                            fontWeight: FontWeight.w600,
-                                                            color: theme.colorScheme.error,
+                                                          style: theme
+                                                              .textTheme
+                                                              .bodyMedium
+                                                              ?.copyWith(
+                                                            fontWeight:
+                                                            FontWeight
+                                                                .w600,
+                                                            color: theme
+                                                                .colorScheme
+                                                                .error,
                                                           ),
                                                         ),
                                                         Text(
                                                           "Cancel lesson",
-                                                          style: theme.textTheme.bodySmall?.copyWith(
-                                                            color: theme.colorScheme.error.withOpacity(0.7),
+                                                          style: theme
+                                                              .textTheme
+                                                              .bodySmall
+                                                              ?.copyWith(
+                                                            color: theme
+                                                                .colorScheme
+                                                                .error
+                                                                .withOpacity(
+                                                                0.7),
                                                             fontSize: 11,
                                                           ),
                                                         ),
@@ -759,7 +965,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                             message: isInstructor
                                                 ? "Lesson time has passed"
                                                 : "View only",
-                                            child: Icon(Icons.lock_outline, color: Colors.grey[400]),
+                                            child: Icon(
+                                                Icons.lock_outline,
+                                                color:
+                                                Colors.grey[400]),
                                           ),
                                       ],
                                     ),
@@ -769,6 +978,194 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             );
                           }).toList(),
                         ),
+                      // --- SIMILARITY SECTION ---
+                      const SizedBox(height: 32),
+                      Text(
+                        "Similarity",
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      FutureBuilder<List<MatchUser>>(
+                        future: _similarityMatchesFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Center(
+                              child: Padding(
+                                padding:
+                                EdgeInsets.symmetric(vertical: 24),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+                          if (snapshot.hasError) {
+                            return Padding(
+                              padding:
+                              EdgeInsets.symmetric(vertical: 24),
+                              child: Text(
+                                "Failed to load matches",
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(color: Colors.red),
+                              ),
+                            );
+                          }
+                          final matches = snapshot.data ?? [];
+                          // Filter only matches with similarity > 0
+                          final filteredMatches = matches.where((m) => m.similarity > 0).toList();
+                          if (filteredMatches.isEmpty) {
+                            return Padding(
+                              padding:
+                              EdgeInsets.symmetric(vertical: 24),
+                              child: Text(
+                                "No similar users found.",
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(color: Colors.grey),
+                              ),
+                            );
+                          }
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: NeverScrollableScrollPhysics(),
+                            itemCount: filteredMatches.length,
+                            itemBuilder: (context, index) {
+                              final match = filteredMatches[index];
+                              // Find only matched skills
+                              List<String> matchedSkills = [];
+                              if (currentUserRole == "Student") {
+                                matchedSkills = currentUserSkillsToLearn.toSet().intersection(match.skillsToTeach.toSet()).toList();
+                              } else if (currentUserRole == "Instructor") {
+                                matchedSkills = currentUserSkillsToTeach.toSet().intersection(match.skillsToLearn.toSet()).toList();
+                              } else {
+                                final a = currentUserSkillsToLearn.toSet().intersection(match.skillsToTeach.toSet());
+                                final b = currentUserSkillsToTeach.toSet().intersection(match.skillsToLearn.toSet());
+                                matchedSkills = [...a, ...b];
+                              }
+                              return Container(
+                                margin:
+                                const EdgeInsets.only(bottom: 16),
+                                child: Material(
+                                  elevation: 4,
+                                  color: theme.cardColor,
+                                  borderRadius:
+                                  BorderRadius.circular(18),
+                                  shadowColor: theme.colorScheme.primary
+                                      .withOpacity(0.15),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 16),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 26,
+                                          backgroundColor: theme
+                                              .colorScheme.primary
+                                              .withOpacity(0.12),
+                                          child: Text(
+                                            match.name.isNotEmpty
+                                                ? match.name[0]
+                                                .toUpperCase()
+                                                : "?",
+                                            style: theme.textTheme
+                                                .titleLarge
+                                                ?.copyWith(
+                                              color: theme
+                                                  .colorScheme.primary,
+                                              fontWeight:
+                                              FontWeight.bold,
+                                              fontSize: 26,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 18),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                            CrossAxisAlignment
+                                                .start,
+                                            children: [
+                                              Text(
+                                                match.name,
+                                                style: theme
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                  fontWeight:
+                                                  FontWeight.bold,
+                                                  fontSize: 20,
+                                                  color: theme
+                                                      .colorScheme
+                                                      .primary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                "Skills matched: ${matchedSkills.join(', ')}",
+                                                style: theme
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .secondary,
+                                                  fontWeight:
+                                                  FontWeight.w500,
+                                                ),
+                                              ),
+                                              // No UID!
+                                            ],
+                                          ),
+                                        ),
+                                        Column(
+                                          mainAxisAlignment:
+                                          MainAxisAlignment.end,
+                                          children: [
+                                            Container(
+                                              decoration:
+                                              BoxDecoration(
+                                                color: theme.colorScheme
+                                                    .primary
+                                                    .withOpacity(0.14),
+                                                borderRadius:
+                                                BorderRadius
+                                                    .circular(12),
+                                              ),
+                                              padding:
+                                              const EdgeInsets
+                                                  .symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8),
+                                              child: Text(
+                                                "Match: ${(match.similarity * 100).toStringAsFixed(0)}%",
+                                                style: theme
+                                                    .textTheme
+                                                    .titleSmall
+                                                    ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .primary,
+                                                  fontWeight:
+                                                  FontWeight.bold,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                      // --- END SIMILARITY SECTION ---
                     ],
                   ),
                 ),

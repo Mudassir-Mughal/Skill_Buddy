@@ -7,6 +7,7 @@ import 'package:skill_buddy_fyp/home.dart';
 import 'Screens/Splash.dart';
 import 'Screens/incomingcall.dart';
 import 'Screens/theme.dart';
+import 'Service/similarity_test.dart';
 import 'firebase_options.dart';// ✅ Import your IncomingCallScreen
 
 // 🔑 Global navigator key
@@ -17,6 +18,8 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  MatchService matchService = MatchService();
+  await matchService.findMatches();
 
   runApp(const MyApp());
 }
