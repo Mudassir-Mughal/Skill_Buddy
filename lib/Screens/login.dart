@@ -99,21 +99,24 @@ class _LoginPageState extends State<LoginPage> {
                   } else if (!emailRegex.hasMatch(email)) {
                     setState(() => dialogError = "Please enter a valid email address.");
                   } else {
-                    // Check if the email is registered
-                    final methods =
-                    await FirebaseAuth.instance.fetchSignInMethodsForEmail(email);
-                    if (methods.isEmpty) {
-                      setState(() => dialogError = "This email is not registered.");
-                      return;
+                    try {
+                      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("✅ Reset link sent to your email.")),
+                      );
+                    } on FirebaseAuthException catch (e) {
+                      if (e.code == 'user-not-found') {
+                        setState(() => dialogError = "This email is not registered.");
+                      } else {
+                        setState(() => dialogError = "Error: ${e.message}");
+                      }
+                    } catch (e) {
+                      setState(() => dialogError = "Unexpected error: $e");
                     }
-                    // Send reset email
-                    await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Reset link sent to your email.")),
-                    );
                   }
                 },
+
                 child: const Text("Send Link", style: TextStyle(color: Colors.white)),
               ),
             ],
@@ -135,18 +138,27 @@ class _LoginPageState extends State<LoginPage> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       try {
-        final userCredential = await FirebaseAuth.instance
-            .signInWithEmailAndPassword(
+        final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: emailController.text.trim(),
           password: passwordController.text.trim(),
         );
 
         final user = userCredential.user;
 
-        // ===== EMAIL VERIFICATION CHECK REMOVED =====
-        // Previously, there was a check for !user.emailVerified and sending verification.
-        // Now, login proceeds directly.
+        // 🔒 EMAIL VERIFICATION CHECK
+        if (user != null && !user.emailVerified) {
+          await user.sendEmailVerification(); // resend verification
+          await FirebaseAuth.instance.signOut(); // logout unverified user
 
+          setState(() {
+            _generalError = "Please verify your email before logging in. A new verification email has been sent.";
+          });
+
+          setState(() => _isLoading = false);
+          return;
+        }
+
+        // ✅ Proceed only if verified
         final userDoc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
 
         if (userDoc.exists) {
@@ -178,31 +190,22 @@ class _LoginPageState extends State<LoginPage> {
         }
       } on FirebaseAuthException catch (e) {
         if (e.code == 'user-not-found') {
-          setState(() {
-            _emailError = "This email is not registered.";
-          });
+          setState(() => _emailError = "This email is not registered.");
         } else if (e.code == 'wrong-password') {
-          setState(() {
-            _passwordError = "Incorrect password.";
-          });
+          setState(() => _passwordError = "Incorrect password.");
         } else if (e.code == 'invalid-email') {
-          setState(() {
-            _emailError = "Invalid email format.";
-          });
+          setState(() => _emailError = "Invalid email format.");
         } else if (e.code == 'user-disabled') {
-          setState(() {
-            _generalError = "This account has been disabled.";
-          });
+          setState(() => _generalError = "This account has been disabled.");
         } else {
-          setState(() {
-            _generalError = "Login failed. Please Enter correct email and password.";
-          });
+          setState(() => _generalError = "Login failed. Please enter correct email and password.");
         }
       } finally {
         setState(() => _isLoading = false);
       }
     }
   }
+
 
   Future<void> signInWithGoogle({required BuildContext context, required bool isFromSignUp}) async {
     try {

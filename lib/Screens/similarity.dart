@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
-import '../Models/MatchUser.dart';
- // <-- Import your shared MatchUser class
 
-class SimilarityMatchesSection extends StatelessWidget {
-  final Future<List<MatchUser>> similarityFuture;
+import '../Models/MatchUser.dart';
+
+
+
+class SimilaritySection extends StatelessWidget {
   final String currentUserRole;
   final List<String> currentUserSkillsToLearn;
   final List<String> currentUserSkillsToTeach;
+  final Future<List<MatchUser>> similarityMatchesFuture;
 
-  const SimilarityMatchesSection({
-    super.key,
-    required this.similarityFuture,
+  const SimilaritySection({
+    Key? key,
     required this.currentUserRole,
     required this.currentUserSkillsToLearn,
     required this.currentUserSkillsToTeach,
-  });
+    required this.similarityMatchesFuture,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +35,7 @@ class SimilarityMatchesSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         FutureBuilder<List<MatchUser>>(
-          future: similarityFuture,
+          future: similarityMatchesFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Center(
@@ -69,6 +71,7 @@ class SimilarityMatchesSection extends StatelessWidget {
               itemCount: filteredMatches.length,
               itemBuilder: (context, index) {
                 final match = filteredMatches[index];
+                // Find only matched skills
                 List<String> matchedSkills = [];
                 if (currentUserRole == "Student") {
                   matchedSkills = currentUserSkillsToLearn.toSet().intersection(match.skillsToTeach.toSet()).toList();

@@ -1,13 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:skill_buddy_fyp/Screens/similarity.dart';
 import 'package:skill_buddy_fyp/Screens/videocall.dart';
-import '../Service/similarity_test.dart';
+import '../Models/MatchUser.dart';
+import '../Service/MatchService.dart';
 import '../Service/video_api.dart';
 import 'SkillCard.dart';
 import 'theme.dart';
 import "SearchResult.dart";
 import 'lessonschedule.dart';
+// <-- Import the new component
 
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
@@ -16,20 +19,7 @@ class HomeScreenContent extends StatefulWidget {
   State<HomeScreenContent> createState() => _HomeScreenContentState();
 }
 
-class MatchUser {
-  final String uid;
-  final String name;
-  final double similarity;
-  final List<String> skillsToTeach;
-  final List<String> skillsToLearn;
-  MatchUser({
-    required this.uid,
-    required this.name,
-    required this.similarity,
-    required this.skillsToTeach,
-    required this.skillsToLearn,
-  });
-}
+// MatchUser class is now only in SimilaritySection.dart
 
 class _HomeScreenContentState extends State<HomeScreenContent> {
   String fullName = '';
@@ -978,192 +968,12 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                             );
                           }).toList(),
                         ),
-                      // --- SIMILARITY SECTION ---
-                      const SizedBox(height: 32),
-                      Text(
-                        "Similarity",
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      FutureBuilder<List<MatchUser>>(
-                        future: _similarityMatchesFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Center(
-                              child: Padding(
-                                padding:
-                                EdgeInsets.symmetric(vertical: 24),
-                                child: CircularProgressIndicator(),
-                              ),
-                            );
-                          }
-                          if (snapshot.hasError) {
-                            return Padding(
-                              padding:
-                              EdgeInsets.symmetric(vertical: 24),
-                              child: Text(
-                                "Failed to load matches",
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(color: Colors.red),
-                              ),
-                            );
-                          }
-                          final matches = snapshot.data ?? [];
-                          // Filter only matches with similarity > 0
-                          final filteredMatches = matches.where((m) => m.similarity > 0).toList();
-                          if (filteredMatches.isEmpty) {
-                            return Padding(
-                              padding:
-                              EdgeInsets.symmetric(vertical: 24),
-                              child: Text(
-                                "No similar users found.",
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(color: Colors.grey),
-                              ),
-                            );
-                          }
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            physics: NeverScrollableScrollPhysics(),
-                            itemCount: filteredMatches.length,
-                            itemBuilder: (context, index) {
-                              final match = filteredMatches[index];
-                              // Find only matched skills
-                              List<String> matchedSkills = [];
-                              if (currentUserRole == "Student") {
-                                matchedSkills = currentUserSkillsToLearn.toSet().intersection(match.skillsToTeach.toSet()).toList();
-                              } else if (currentUserRole == "Instructor") {
-                                matchedSkills = currentUserSkillsToTeach.toSet().intersection(match.skillsToLearn.toSet()).toList();
-                              } else {
-                                final a = currentUserSkillsToLearn.toSet().intersection(match.skillsToTeach.toSet());
-                                final b = currentUserSkillsToTeach.toSet().intersection(match.skillsToLearn.toSet());
-                                matchedSkills = [...a, ...b];
-                              }
-                              return Container(
-                                margin:
-                                const EdgeInsets.only(bottom: 16),
-                                child: Material(
-                                  elevation: 4,
-                                  color: theme.cardColor,
-                                  borderRadius:
-                                  BorderRadius.circular(18),
-                                  shadowColor: theme.colorScheme.primary
-                                      .withOpacity(0.15),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 20, vertical: 16),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 26,
-                                          backgroundColor: theme
-                                              .colorScheme.primary
-                                              .withOpacity(0.12),
-                                          child: Text(
-                                            match.name.isNotEmpty
-                                                ? match.name[0]
-                                                .toUpperCase()
-                                                : "?",
-                                            style: theme.textTheme
-                                                .titleLarge
-                                                ?.copyWith(
-                                              color: theme
-                                                  .colorScheme.primary,
-                                              fontWeight:
-                                              FontWeight.bold,
-                                              fontSize: 26,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 18),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                            CrossAxisAlignment
-                                                .start,
-                                            children: [
-                                              Text(
-                                                match.name,
-                                                style: theme
-                                                    .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                  fontWeight:
-                                                  FontWeight.bold,
-                                                  fontSize: 20,
-                                                  color: theme
-                                                      .colorScheme
-                                                      .primary,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                "Skills matched: ${matchedSkills.join(', ')}",
-                                                style: theme
-                                                    .textTheme
-                                                    .bodyMedium
-                                                    ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .secondary,
-                                                  fontWeight:
-                                                  FontWeight.w500,
-                                                ),
-                                              ),
-                                              // No UID!
-                                            ],
-                                          ),
-                                        ),
-                                        Column(
-                                          mainAxisAlignment:
-                                          MainAxisAlignment.end,
-                                          children: [
-                                            Container(
-                                              decoration:
-                                              BoxDecoration(
-                                                color: theme.colorScheme
-                                                    .primary
-                                                    .withOpacity(0.14),
-                                                borderRadius:
-                                                BorderRadius
-                                                    .circular(12),
-                                              ),
-                                              padding:
-                                              const EdgeInsets
-                                                  .symmetric(
-                                                  horizontal: 12,
-                                                  vertical: 8),
-                                              child: Text(
-                                                "Match: ${(match.similarity * 100).toStringAsFixed(0)}%",
-                                                style: theme
-                                                    .textTheme
-                                                    .titleSmall
-                                                    ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .primary,
-                                                  fontWeight:
-                                                  FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
+                      // --- SIMILARITY SECTION MOVED TO COMPONENT ---
+                      SimilaritySection(
+                        currentUserRole: currentUserRole,
+                        currentUserSkillsToLearn: currentUserSkillsToLearn,
+                        currentUserSkillsToTeach: currentUserSkillsToTeach,
+                        similarityMatchesFuture: _similarityMatchesFuture,
                       ),
                       // --- END SIMILARITY SECTION ---
                     ],

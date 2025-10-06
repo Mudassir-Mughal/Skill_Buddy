@@ -41,56 +41,67 @@ class _SignUpPageState extends State<SignUpPage> {
 
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
+
       try {
         final email = emailController.text.trim();
         final password = passwordController.text;
         final name = nameController.text.trim();
 
-        // Check if email already exists
-        final signInMethods = await FirebaseAuth.instance.fetchSignInMethodsForEmail(email);
-        if (signInMethods.isNotEmpty) {
-          setState(() {
-            _emailError = "This email is already registered.";
-            _isLoading = false;
-          });
-          return;
-        }
-
-        final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
+        // Create user in Firebase
+        final userCredential = await FirebaseAuth.instance
+            .createUserWithEmailAndPassword(email: email, password: password);
 
         final user = userCredential.user;
 
         if (user != null) {
-          // Send email verification
-          await user.sendEmailVerification();
+          try {
+            // Reload user to ensure fresh state
+            await user.reload();
 
-          // Save user to Firestore as before
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'uid': user.uid,
-            'email': user.email,
-            'fullName': name,
-            'createdAt': Timestamp.now(),
-            'profileSet': false,
-          });
+            // Send verification email
+            await user.sendEmailVerification();
+            print("✅ Verification email sent successfully to ${user.email}");
 
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                "Account created! Please check your email to verify your account.",
+            // Save user details in Firestore
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .set({
+              'uid': user.uid,
+              'email': user.email,
+              'fullName': name,
+              'createdAt': Timestamp.now(),
+              'profileSet': false,
+            });
+
+            if (!mounted) return;
+
+            // Show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  "✅ Account created! Please check your inbox (or Spam) to verify your account.",
+                ),
+                duration: Duration(seconds: 4),
               ),
-            ),
-          );
+            );
 
-          // Redirect to Login Page
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const LoginPage()),
-          );}}
-      on FirebaseAuthException catch (e) {
+            // Delay before navigating (so snackbar is visible)
+            await Future.delayed(const Duration(seconds: 2));
+
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+            );
+          } catch (e) {
+            print("❌ Error sending verification email: $e"); // Debugging
+            setState(() {
+              _generalError =
+              "⚠️ Could not send verification email. Please try again later.";
+            });
+          }
+        }
+      } on FirebaseAuthException catch (e) {
         if (e.code == 'weak-password') {
           setState(() {
             _passwordError = "Password should be at least 6 characters.";
@@ -104,19 +115,22 @@ class _SignUpPageState extends State<SignUpPage> {
             _emailError = "Invalid email format.";
           });
         } else {
+          print("❌ FirebaseAuthException: ${e.message}");
           setState(() {
             _generalError = e.message ?? "Sign up failed. Please try again.";
           });
         }
       } catch (e) {
+        print("❌ Unexpected signup error: $e"); // Debugging
         setState(() {
-          _generalError = "Sign up failed. Please try again.";
+          _generalError = "Unexpected error. Please try again.";
         });
       } finally {
         setState(() => _isLoading = false);
       }
     }
   }
+
 
   InputDecoration inputStyle(String label, IconData icon, {String? errorText}) {
     return InputDecoration(
@@ -186,7 +200,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           ),
                         ],
                       ),
-                      child: Center(
+                      child: const Center(
                         child: Icon(
                           Icons.handshake_rounded,
                           size: 36,
@@ -216,7 +230,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(
+                const Text(
                   "Create a new account",
                   style: TextStyle(
                     fontSize: 16,
@@ -260,7 +274,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: Text(_nameError!, style: TextStyle(color: Colors.red, fontSize: 13)),
+                            child: Text(_nameError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
                           ),
                         ),
                       const SizedBox(height: 14),
@@ -295,7 +309,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: Text(_emailError!, style: TextStyle(color: Colors.red, fontSize: 13)),
+                            child: Text(_emailError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
                           ),
                         ),
                       const SizedBox(height: 14),
@@ -330,7 +344,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: Text(_passwordError!, style: TextStyle(color: Colors.red, fontSize: 13)),
+                            child: Text(_passwordError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
                           ),
                         ),
                       const SizedBox(height: 14),
@@ -365,7 +379,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: Text(_confirmPasswordError!, style: TextStyle(color: Colors.red, fontSize: 13)),
+                            child: Text(_confirmPasswordError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
                           ),
                         ),
                       if (_generalError != null)
