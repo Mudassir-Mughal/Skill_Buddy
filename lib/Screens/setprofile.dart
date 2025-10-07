@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../Service/skilllist.dart';
 import 'StudentHome.dart';
-import '../home.dart';
 import 'theme.dart'; // <-- your AppColors should be defined here
-import 'package:skill_buddy_fyp/Screens/home.dart';
+import 'package:skill_buddy_fyp/Screens/home.dart'; // <-- import the shared skills list
 
 class SetProfilePage extends StatefulWidget {
   final Map<String, dynamic>? existingData;
@@ -38,63 +38,6 @@ class _SetProfilePageState extends State<SetProfilePage> {
   // Auth instance
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Skills list (kept from your original)
-  final List<String> allSkills = [
-    'Graphic Design',
-    'Flutter Development',
-    'Python Programming',
-    'Freelancing',
-    'SEO',
-    'Video Editing',
-    'Web Development',
-    'Digital Marketing',
-    'UI/UX Design',
-    'React Development',
-    'Android Development',
-    'iOS Development',
-    'Machine Learning',
-    'Data Science',
-    'Artificial Intelligence',
-    'Content Writing',
-    'Social Media Management',
-    'JavaScript',
-    'Node.js',
-    'Angular Development',
-    'Cloud Computing',
-    'AWS',
-    'DevOps',
-    'Blockchain Development',
-    'Cyber Security',
-    'Game Development',
-    'Unity 3D',
-    'Database Management',
-    'SQL',
-    'MongoDB',
-    'WordPress Development',
-    'PHP Development',
-    'Java Programming',
-    'C++ Programming',
-    'Swift Programming',
-    'Kotlin Development',
-    'Data Analytics',
-    'Business Intelligence',
-    'Digital Photography',
-    '3D Modeling',
-    'Animation',
-    'Music Production',
-    'Language Teaching',
-    'Public Speaking',
-    'Project Management',
-    'Product Management',
-    'Agile Methodology',
-    'Quality Assurance',
-    'Technical Writing',
-    'Mobile App Design',
-  ];
-
-  // Assign a unique index to each skill for future-proofing KNN
-  Map<String, int> skillToIndex = {};
-
   // Selected skills
   List<String> selectedTeachSkills = [];
   List<String> selectedLearnSkills = [];
@@ -102,11 +45,6 @@ class _SetProfilePageState extends State<SetProfilePage> {
   @override
   void initState() {
     super.initState();
-
-    // Build skillToIndex map
-    for (int i = 0; i < allSkills.length; i++) {
-      skillToIndex[allSkills[i]] = i;
-    }
 
     // Populate fields if existingData provided
     if (widget.existingData != null) {

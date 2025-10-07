@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'SkillCard.dart';
 import 'SkillDetails.dart';
 import 'theme.dart';
 import 'dart:async';
+import '../Service/skilllist.dart'; // <-- Import shared skills and index
 
 class SearchResultsPage extends StatefulWidget {
   final String initialQuery;
@@ -54,7 +56,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
       // Fetch all skills
       final skillSnapshot = await FirebaseFirestore.instance.collection('skills').get();
-      List<Map<String, dynamic>> allSkills = skillSnapshot.docs.map((doc) {
+      List<Map<String, dynamic>> allSkillsList = skillSnapshot.docs.map((doc) {
         final data = doc.data();
         final userId = data['userId'];
         final instructorName = userMap[userId] ?? 'Unknown';
@@ -87,8 +89,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       }).where((item) => item != null).cast<Map<String, dynamic>>().toList();
 
       setState(() {
-        _allSkills = allSkills;
-        _results = allSkills;
+        _allSkills = allSkillsList;
+        _results = allSkillsList;
         _isLoading = false;
       });
     } catch (e) {
@@ -110,18 +112,43 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     });
   }
 
-  void _filterSkills(String query) {
+  void _filterSkills(String query) async {
+    List<Map<String, dynamic>> filtered;
+    if (query.isEmpty) {
+      filtered = _allSkills;
+    } else {
+      filtered = _allSkills.where((item) {
+        final title = (item['title'] ?? '').toString().toLowerCase();
+        return title.contains(query.toLowerCase());
+      }).toList();
+    }
+
     setState(() {
-      if (query.isEmpty) {
-        _results = _allSkills;
-      } else {
-        _results = _allSkills.where((item) {
-          final title = (item['title'] ?? '').toString().toLowerCase();
-          return title.contains(query.toLowerCase());
-        }).toList();
-      }
+      _results = filtered;
     });
   }
+
+  // ------------------- Save clicked skill info -------------------
+  Future<void> _saveClickedSkillToFirestore(String skillName) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final skillIndex = skillToIndex[skillName.toLowerCase()];
+    if (skillIndex == null) {
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'lastClickedSkill': skillName,
+        'lastClickedSkillIndex': skillIndex,
+        'lastClickedSkillAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error saving clicked skill: $e');
+    }
+  }
+  // ----------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +258,11 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
-              onTap: () {
+              onTap: () async {
+                // --------- Save clicked skill info ---------
+                final skillName = item['title']?.toString() ?? '';
+                await _saveClickedSkillToFirestore(skillName);
+                // --------- Go to skill details page ---------
                 Navigator.push(
                   context,
                   MaterialPageRoute(

@@ -12,11 +12,17 @@
     <!-- Required for screen sharing (Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- For screen capture output (Android 14+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <uses-permission android:name="android.permission.CAPTURE_VIDEO_OUTPUT" />
     <application
         android:label="skill_buddy_fyp"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="chat_channel"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
