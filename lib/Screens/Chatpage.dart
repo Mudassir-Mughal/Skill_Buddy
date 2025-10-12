@@ -1,11 +1,18 @@
 import 'dart:typed_data';
+import 'dart:convert';
+import 'dart:io' show Platform, Directory;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'lessonschedule.dart';
-import "theme.dart";
+import 'theme.dart';
 
 const String cloudName = "dthkthzzf";
 const String uploadPreset = "unsigned_preset";
@@ -51,8 +58,6 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  // -------------------- MESSAGE SENDING --------------------
-
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -82,36 +87,32 @@ class _ChatPageState extends State<ChatPage> {
     _controller.clear();
   }
 
-  // -------------------- CLOUDINARY IMAGE UPLOAD --------------------
-
   Future<String?> _uploadToCloudinary(
-      Uint8List fileBytes, String fileName) async {
-    final uri =
-    Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/image/upload");
-
+      Uint8List fileBytes, String fileName, String resourceType) async {
     try {
-      var request = http.MultipartRequest("POST", uri)
+      final uri = Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/$resourceType/upload");
+      final request = http.MultipartRequest('POST', uri)
         ..fields['upload_preset'] = uploadPreset
-        ..files.add(
-            http.MultipartFile.fromBytes('file', fileBytes, filename: fileName));
+        ..files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: fileName));
 
       final response = await request.send();
-      final res = await http.Response.fromStream(response);
+      final responseData = await response.stream.bytesToString();
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        return data['secure_url'];
+      if (response.statusCode == 200) {
+        final data = jsonDecode(responseData);
+        String rawUrl = data['secure_url'];
+        String fixedUrl = rawUrl.replaceFirst('/upload/', '/upload/fl_attachment/');
+        print("Uploaded to Cloudinary: $fixedUrl");
+        return fixedUrl;
       } else {
-        print("Cloudinary Upload Failed: ${res.body}");
+        print("Cloudinary upload failed: ${response.reasonPhrase}");
         return null;
       }
     } catch (e) {
-      print("Error uploading to Cloudinary: $e");
+      print("Upload error: $e");
       return null;
     }
   }
-
-  // -------------------- ATTACHMENT PICKER --------------------
 
   void _pickAttachment() async {
     showModalBottomSheet(
@@ -125,6 +126,14 @@ class _ChatPageState extends State<ChatPage> {
               onTap: () async {
                 Navigator.pop(context);
                 await _pickAndSendImage();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.description, color: AppColors.primary),
+              title: Text('Document'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _pickAndSendWordDocument();
               },
             ),
           ],
@@ -144,36 +153,30 @@ class _ChatPageState extends State<ChatPage> {
       if (result != null && result.files.single.bytes != null) {
         final fileBytes = result.files.single.bytes!;
         final fileName = result.files.single.name;
-
-        String? url = await _uploadToCloudinary(fileBytes, fileName);
-
+        String? url = await _uploadToCloudinary(fileBytes, fileName, "image");
         if (url == null) {
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text("Failed to upload image.")));
           return;
         }
-
         final timestamp = Timestamp.now();
-
         final message = {
           'senderId': widget.currentUserId,
           'receiverId': widget.peerId,
           'type': 'image',
           'url': url,
+          'fileName': fileName,
           'timestamp': timestamp,
           'participants': [widget.currentUserId, widget.peerId],
         };
-
         final chatRoomRef =
         FirebaseFirestore.instance.collection('chatRooms').doc(chatRoomId);
-
         await chatRoomRef.set({
           'chatRoomId': chatRoomId,
           'participants': [widget.currentUserId, widget.peerId],
           'lastMessage': '📷 Photo',
           'lastTimestamp': timestamp,
         }, SetOptions(merge: true));
-
         await chatRoomRef.collection('messages').add(message);
       }
     } catch (e) {
@@ -182,7 +185,157 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  // -------------------- UI --------------------
+  Future<void> _pickAndSendWordDocument() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['doc', 'docx'],
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (result != null && result.files.single.bytes != null) {
+        final fileBytes = result.files.single.bytes!;
+        final fileName = result.files.single.name;
+        String? url = await _uploadToCloudinary(fileBytes, fileName, "raw");
+        if (url == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to upload Word document.")),
+          );
+          return;
+        }
+        final timestamp = Timestamp.now();
+        final message = {
+          'senderId': widget.currentUserId,
+          'receiverId': widget.peerId,
+          'type': 'document',
+          'fileName': fileName,
+          'url': url,
+          'timestamp': timestamp,
+          'participants': [widget.currentUserId, widget.peerId],
+        };
+        final chatRoomRef =
+        FirebaseFirestore.instance.collection('chatRooms').doc(chatRoomId);
+        await chatRoomRef.set({
+          'chatRoomId': chatRoomId,
+          'participants': [widget.currentUserId, widget.peerId],
+          'lastMessage': '📄 Document',
+          'lastTimestamp': timestamp,
+        }, SetOptions(merge: true));
+        await chatRoomRef.collection('messages').add(message);
+
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Word document sent successfully!")));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error picking/sending Word document: $e")));
+    }
+  }
+
+  Future<bool> requestStoragePermission() async {
+    // Only for mobile platforms
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      if (Platform.isAndroid) {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        if (androidInfo.version.sdkInt >= 30) {
+          var status = await Permission.manageExternalStorage.status;
+          if (!status.isGranted) {
+            status = await Permission.manageExternalStorage.request();
+          }
+          return status.isGranted;
+        } else {
+          var status = await Permission.storage.status;
+          if (!status.isGranted) {
+            status = await Permission.storage.request();
+          }
+          return status.isGranted;
+        }
+      }
+      // iOS: permission handled by default
+      return true;
+    }
+    return true;
+  }
+
+  Future<void> downloadToDownloadsFolder(String url, String fileName) async {
+    if (kIsWeb) {
+      // On web, just open the url in browser (will trigger download if fl_attachment is set)
+      if (await canLaunchUrl(Uri.parse(url))) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Could not download/open in browser.")),
+        );
+      }
+      return;
+    }
+
+    Directory? downloadsDir;
+    bool permissionGranted = await requestStoragePermission();
+    if (permissionGranted) {
+      if (Platform.isAndroid) {
+        downloadsDir = Directory('/storage/emulated/0/Download');
+      } else if (Platform.isIOS) {
+        downloadsDir = await getApplicationDocumentsDirectory();
+      } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        downloadsDir = await getDownloadsDirectory();
+      }
+      if (downloadsDir != null) {
+        final filePath = "${downloadsDir.path}/$fileName";
+        try {
+          final response = await Dio().download(url, filePath);
+          if (response.statusCode == 200) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Downloaded to: $filePath")),
+            );
+            // DO NOT open file after download, just notify user
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Download failed. Try again.")),
+            );
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Download failed: $e")),
+          );
+        }
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Storage permission denied!"))
+      );
+      openAppSettings();
+    }
+  }
+
+  IconData _getFileIcon(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'doc':
+      case 'docx':
+        return Icons.description;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+        return Icons.image;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
+
+  Future<void> _deleteMessage(String messageId) async {
+    final msgRef = FirebaseFirestore.instance
+        .collection('chatRooms')
+        .doc(chatRoomId)
+        .collection('messages')
+        .doc(messageId);
+
+    await msgRef.delete();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Message deleted!')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +414,7 @@ class _ChatPageState extends State<ChatPage> {
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msg = messages[index].data() as Map<String, dynamic>;
+                    final msgId = messages[index].id;
                     final isMe = msg['senderId'] == widget.currentUserId;
                     final msgType = msg['type'] ?? 'text';
                     final deletedFor = msg['deletedFor'] ?? [];
@@ -279,24 +433,78 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       );
                     } else if (msgType == 'image') {
+                      final fileName = msg['fileName'] ?? 'image.jpg';
+                      final url = msg['url'];
                       content = GestureDetector(
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => Dialog(
-                              child: Image.network(msg['url']),
-                            ),
-                          );
+                        onTap: () async {
+                          if (kIsWeb) {
+                            // Web: Only zoom preview
+                            showDialog(
+                              context: context,
+                              builder: (_) => Dialog(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                child: InteractiveViewer(
+                                  child: Image.network(url, fit: BoxFit.contain),
+                                ),
+                              ),
+                            );
+                          } else {
+                            await downloadToDownloadsFolder(url, fileName);
+                          }
                         },
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(10),
                           child: Image.network(
-                            msg['url'],
+                            url,
                             height: 180,
                             width: 180,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Icon(Icons.broken_image,
                                 size: 80, color: Colors.grey),
+                          ),
+                        ),
+                      );
+                    } else if (msgType == 'document') {
+                      final fileName = msg['fileName'] ?? 'Document.docx';
+                      final url = msg['url'];
+                      final fileIcon = _getFileIcon(fileName);
+                      if (!(fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx'))) {
+                        return const SizedBox.shrink();
+                      }
+                      content = InkWell(
+                        onTap: () async {
+                          await downloadToDownloadsFolder(url, fileName);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AppColors.primary.withOpacity(0.15),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(fileIcon, color: AppColors.primary, size: 28),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  fileName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    decoration: TextDecoration.underline,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Icon(Icons.download_rounded,
+                                  color: AppColors.primary, size: 22),
+                            ],
                           ),
                         ),
                       );
@@ -307,39 +515,24 @@ class _ChatPageState extends State<ChatPage> {
                       );
                     }
 
+                    // Long press to show delete dialog
                     return GestureDetector(
-                      onLongPress: () async {
+                      onLongPress: () {
                         showDialog(
                           context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: Text("Delete Message"),
-                            content:
-                            Text("Do you want to delete this message for yourself?"),
+                          builder: (_) => AlertDialog(
+                            title: Text('Delete Message'),
+                            content: Text('Do you want to delete this message?'),
                             actions: [
                               TextButton(
-                                child: Text("Cancel"),
-                                onPressed: () => Navigator.pop(ctx),
+                                child: Text('Cancel'),
+                                onPressed: () => Navigator.of(context).pop(),
                               ),
                               TextButton(
-                                child:
-                                Text("Delete", style: TextStyle(color: Colors.red)),
+                                child: Text('Delete', style: TextStyle(color: Colors.red)),
                                 onPressed: () async {
-                                  Navigator.pop(ctx);
-                                  final msgId = messages[index].id;
-                                  final msgRef = FirebaseFirestore.instance
-                                      .collection('chatRooms')
-                                      .doc(chatRoomId)
-                                      .collection('messages')
-                                      .doc(msgId);
-                                  List<dynamic> alreadyDeletedFor =
-                                      deletedFor ?? [];
-                                  if (!alreadyDeletedFor
-                                      .contains(widget.currentUserId)) {
-                                    await msgRef.update({
-                                      'deletedFor':
-                                      FieldValue.arrayUnion([widget.currentUserId])
-                                    });
-                                  }
+                                  Navigator.of(context).pop();
+                                  await _deleteMessage(msgId);
                                 },
                               ),
                             ],
@@ -347,12 +540,10 @@ class _ChatPageState extends State<ChatPage> {
                         );
                       },
                       child: Align(
-                        alignment:
-                        isMe ? Alignment.centerRight : Alignment.centerLeft,
+                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                         child: Container(
                           constraints: BoxConstraints(
-                            maxWidth:
-                            MediaQuery.of(context).size.width * 0.70,
+                            maxWidth: MediaQuery.of(context).size.width * 0.70,
                           ),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 10),
@@ -363,16 +554,12 @@ class _ChatPageState extends State<ChatPage> {
                             right: isMe ? 0 : 40,
                           ),
                           decoration: BoxDecoration(
-                            color: isMe
-                                ? AppColors.chatMe
-                                : AppColors.chatPeer,
+                            color: isMe ? AppColors.chatMe : AppColors.chatPeer,
                             borderRadius: BorderRadius.only(
                               topLeft: const Radius.circular(18),
                               topRight: const Radius.circular(18),
-                              bottomLeft:
-                              Radius.circular(isMe ? 18 : 4),
-                              bottomRight:
-                              Radius.circular(isMe ? 4 : 18),
+                              bottomLeft: Radius.circular(isMe ? 18 : 4),
+                              bottomRight: Radius.circular(isMe ? 4 : 18),
                             ),
                             boxShadow: [
                               BoxShadow(
@@ -424,8 +611,8 @@ class _ChatPageState extends State<ChatPage> {
                         decoration: InputDecoration(
                           hintText: "Type a message...",
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
+                          contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         ),
                         style: const TextStyle(fontSize: 16),
                       ),

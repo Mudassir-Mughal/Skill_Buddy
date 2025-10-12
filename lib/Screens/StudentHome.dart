@@ -18,7 +18,7 @@ class StudentHomePage extends StatefulWidget {
 
   @override
   State<StudentHomePage> createState() => _StudentHomePageState();
- }
+}
 
 class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
@@ -36,7 +36,6 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
   void initState() {
     super.initState();
 
-    // Initialize _pages here because currentUserId is available only after instance creation
     _pages = [
       HomeScreenContent(),
       if (currentUserId != null)
@@ -44,10 +43,16 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
       else
         Center(child: Text('User not logged in')),
       ViewRequestsPage(role: "Student"),
-
     ];
   }
 
+  // Function to fetch user name from Firestore
+  Future<String> fetchUserName() async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) return '';
+    final doc = await FirebaseFirestore.instance.collection('users').doc(currentUserId).get();
+    return doc.data()?['Fullname'] ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +79,6 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // Centered Title
                   Center(
                     child: Text(
                       _pageTitles[_selectedIndex],
@@ -84,7 +88,6 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                       ),
                     ),
                   ),
-                  // Right-aligned profile icon
                   Positioned(
                     right: 0,
                     child: GestureDetector(
@@ -119,6 +122,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
       bottomNavigationBar: _buildBottomNav(theme),
     );
   }
+
   void _showProfileCard(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -184,12 +188,27 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      'Mudassir Mughal',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    FutureBuilder<String>(
+                      future: fetchUserName(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Text(
+                            'Loading...',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                        }
+                        final name = snapshot.data ?? '';
+                        return Text(
+                          name,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 8),
                     Container(
@@ -205,7 +224,6 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                   ],
                 ),
               ),
-              // Menu Items
               _buildProfileMenuItem(
                 icon: Icons.person_outline,
                 title: 'My Profile',
@@ -391,7 +409,6 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
               index: 2,
               theme: theme,
             ),
-
           ],
         ),
       ),
@@ -422,13 +439,9 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
     );
   }
 
-   void _onItemTapped(int index) {
-     setState(() {
-       _selectedIndex = index;
-     });
-   }
-
-
-
- }
-
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+}

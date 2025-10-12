@@ -8,7 +8,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'setprofile.dart';
 import 'theme.dart';
 
-// 🌐 Cloudinary Config
 const String cloudName = "dthkthzzf";
 const String uploadPreset = "unsigned_preset";
 
@@ -28,7 +27,7 @@ class ProfilePage extends StatelessWidget {
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return data['secure_url']; // ✅ Cloudinary image URL
+        return data['secure_url'];
       } else {
         print("Cloudinary Upload Failed: ${res.body}");
         return null;
@@ -46,18 +45,16 @@ class ProfilePage extends StatelessWidget {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: false,
-      withData: true, // ✅ needed for web
+      withData: true,
     );
 
     if (result != null && result.files.single.bytes != null) {
       final fileBytes = result.files.single.bytes!;
       final fileName = result.files.single.name;
 
-      // Upload to Cloudinary
       final imageUrl = await _uploadToCloudinary(fileBytes, fileName);
 
       if (imageUrl != null) {
-        // Save URL in Firestore
         await FirebaseFirestore.instance.collection("users").doc(user.uid).update({
           "photoUrl": imageUrl,
         });
@@ -80,6 +77,16 @@ class ProfilePage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text("Profile", style: TextStyle(color: Colors.white)),
+        centerTitle: true,
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: userDoc.snapshots(),
         builder: (context, snapshot) {
@@ -97,7 +104,7 @@ class ProfilePage extends StatelessWidget {
 
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600), // ✅ Web-friendly layout
+              constraints: const BoxConstraints(maxWidth: 600),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Container(
@@ -193,7 +200,7 @@ class ProfilePage extends StatelessWidget {
                             );
                           },
                           icon: const Icon(Icons.edit, color: Colors.white),
-                          label: const Text("Edit Profile"),
+                          label: const Text("Edit Profile", style: TextStyle(color: Colors.white)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(vertical: 15),
@@ -204,48 +211,7 @@ class ProfilePage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-
-                      // Delete Account Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text("Delete Account"),
-                                content: const Text(
-                                    "Are you sure you want to delete your account? This action cannot be undone."),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-                                  TextButton(onPressed: () => Navigator.pop(ctx, true),
-                                      child: const Text("Delete", style: TextStyle(color: Colors.red))),
-                                ],
-                              ),
-                            );
-
-                            if (confirm == true) {
-                              try {
-                                await userDoc.delete();
-                                await FirebaseAuth.instance.currentUser!.delete();
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text("Error: $e")),
-                                );
-                              }
-                            }
-                          },
-                          icon: const Icon(Icons.delete, color: Colors.white),
-                          label: const Text("Delete Account"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                          ),
-                        ),
-                      ),
+                      // --- Delete Account Button REMOVED ---
                     ],
                   ),
                 ),

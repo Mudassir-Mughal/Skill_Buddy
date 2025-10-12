@@ -40,9 +40,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
       _descriptionController.text = data['description'] ?? '';
       _totalClassesController.text = data['totalClasses']?.toString() ?? '';
       _durationController.text = data['duration'] ?? '';
-      _selectedExchangeSkill = (data['exchangeFor'] is List && (data['exchangeFor'] as List).isNotEmpty)
-          ? (data['exchangeFor'] as List).first
-          : (data['exchangeFor'] ?? '').toString();
+      final exchangeForList = (data['exchangeFor'] is List) ? (data['exchangeFor'] as List) : [];
+      _selectedExchangeSkill = exchangeForList.isNotEmpty
+          ? exchangeForList.first?.toString()
+          : null;
       _priceController.text = data['price']?.toString() ?? '';
       _expertlevel = data['expertlevel'] ?? 'Beginner';
     }
@@ -57,8 +58,20 @@ class _AddSkillPageState extends State<AddSkillPage> {
       _skillsToTeach = (data['skillsToTeach'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
       _skillsWantToLearn = (data['skillsToLearn'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
       userRole = ((data['role'] ?? "both") as String).toLowerCase();
+
+      if (_selectedSkill != null && !_skillsToTeach.contains(_selectedSkill!)) {
+        _skillsToTeach.insert(0, _selectedSkill!);
+      }
       if (_selectedSkill == null && _skillsToTeach.isNotEmpty) {
         _selectedSkill = _skillsToTeach.first;
+      }
+
+      if (_selectedExchangeSkill != null && !_skillsWantToLearn.contains(_selectedExchangeSkill!)) {
+        if (_selectedExchangeSkill!.isNotEmpty) {
+          _skillsWantToLearn.insert(0, _selectedExchangeSkill!);
+        } else {
+          _selectedExchangeSkill = _skillsWantToLearn.isNotEmpty ? _skillsWantToLearn.first : null;
+        }
       }
       if (_selectedExchangeSkill == null && _skillsWantToLearn.isNotEmpty) {
         _selectedExchangeSkill = _skillsWantToLearn.first;
@@ -82,9 +95,9 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'exchangeFor': userRole == "instructor"
             ? []
             : _selectedExchangeSkill != null ? [_selectedExchangeSkill] : [],
-        'price': userRole == "both"
-            ? 0
-            : int.tryParse(_priceController.text.trim()) ?? 0,
+        'price': (userRole == "both" || userRole == "instructor")
+            ? int.tryParse(_priceController.text.trim()) ?? 0
+            : 0,
         'timestamp': Timestamp.now(),
       };
 
@@ -208,6 +221,20 @@ class _AddSkillPageState extends State<AddSkillPage> {
     );
   }
 
+  String? _validateNumber(String? value, String label) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter $label';
+    }
+    final numValue = int.tryParse(value.trim());
+    if (numValue == null) {
+      return '$label must be a number';
+    }
+    if (numValue < 1) {
+      return '$label must be greater than 0';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -276,7 +303,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
                     ],
                   ),
                   child: DropdownButtonFormField<String>(
-                    value: _selectedSkill,
+                    value: (_skillsToTeach.contains(_selectedSkill)) ? _selectedSkill : null,
                     items: _skillsToTeach.map((skill) {
                       return DropdownMenuItem(
                         value: skill,
@@ -390,7 +417,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
                     decoration: _inputDecoration('Total Classes').copyWith(
                       prefixIcon: Icon(Icons.calendar_today_outlined, color: AppColors.primary),
                     ),
-                    validator: (value) => value!.isEmpty ? 'Please enter total classes' : null,
+                    validator: (value) => _validateNumber(value, "Total Classes"),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -418,7 +445,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
                 const SizedBox(height: 16),
 
-                if (userRole == "both")
+                if (userRole == "both") ...[
                   Container(
                     decoration: _getBoxDecoration(),
                     child: _skillsWantToLearn.isEmpty
@@ -427,7 +454,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
                       style: TextStyle(color: Colors.red),
                     )
                         : DropdownButtonFormField<String>(
-                      value: _selectedExchangeSkill,
+                      value: (_skillsWantToLearn.contains(_selectedExchangeSkill)) ? _selectedExchangeSkill : null,
                       items: _skillsWantToLearn.map((skill) {
                         return DropdownMenuItem(
                           value: skill,
@@ -449,6 +476,19 @@ class _AddSkillPageState extends State<AddSkillPage> {
                           : null,
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: _getBoxDecoration(),
+                    child: TextFormField(
+                      controller: _priceController,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecoration('Price (PKR)').copyWith(
+                        prefixIcon: Icon(Icons.attach_money_outlined, color: AppColors.primary),
+                      ),
+                      validator: (value) => _validateNumber(value, "Price"),
+                    ),
+                  ),
+                ],
 
                 if (userRole == "instructor")
                   Container(
@@ -459,7 +499,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
                       decoration: _inputDecoration('Price (PKR)').copyWith(
                         prefixIcon: Icon(Icons.attach_money_outlined, color: AppColors.primary),
                       ),
-                      validator: (value) => value!.isEmpty ? 'Please enter price' : null,
+                      validator: (value) => _validateNumber(value, "Price"),
                     ),
                   ),
 

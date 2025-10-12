@@ -135,8 +135,14 @@ class _MeetingScreenState extends State<MeetingScreen> {
     try {
       if (!isScreenSharing) {
         await _room.enableScreenShare();
+        setState(() {
+          isScreenSharing = true;
+        });
       } else {
         await _room.disableScreenShare();
+        setState(() {
+          isScreenSharing = false;
+        });
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -31,9 +31,6 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
   DateTime? _selectedDate;
   TimeOfDay? _selectedStartTime;
   TimeOfDay? _selectedEndTime;
-  String? _selectedRepeat;
-
-  final List<String> _repeatOptions = ["None", "1 day", "1 week", "1 month"];
 
   @override
   void initState() {
@@ -73,7 +70,6 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
           );
         }
       }
-      _selectedRepeat = data['repeat'];
     }
   }
 
@@ -181,7 +177,6 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
       "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
       "start_time": "${_selectedStartTime!.hour.toString().padLeft(2, '0')}:${_selectedStartTime!.minute.toString().padLeft(2, '0')}",
       "end_time": "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}",
-      "repeat": _selectedRepeat ?? "None",
       "enabled": false,
     };
 
@@ -455,20 +450,6 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
                       validator: (_) => _selectedEndTime == null ? "Select end time" : _validateTimes(),
                     ),
                   ),
-                ),
-              ),
-              // Repeat Dropdown
-              Container(
-                decoration: _getBoxDecoration(),
-                margin: const EdgeInsets.only(bottom: 28),
-                child: DropdownButtonFormField<String>(
-                  decoration: _inputDecoration('Repeat Class', icon: Icons.repeat_rounded),
-                  value: _selectedRepeat,
-                  items: _repeatOptions
-                      .map((r) => DropdownMenuItem(value: r, child: Text(r)))
-                      .toList(),
-                  onChanged: (val) => setState(() => _selectedRepeat = val),
-                  validator: (val) => val == null ? "Select repeat option" : null,
                 ),
               ),
               // Save/Update Button

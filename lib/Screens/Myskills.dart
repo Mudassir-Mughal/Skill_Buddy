@@ -32,14 +32,13 @@ class _MySkillsPageState extends State<MySkillsPage> {
 
     return querySnapshot.docs.map((doc) {
       final data = doc.data();
-      data['skillId'] = doc.id; // <-- Add this line!
+      data['skillId'] = doc.id;
       return data;
     }).toList();
   }
 
   Future<void> _deleteSkill(String skillId) async {
     await FirebaseFirestore.instance.collection('skills').doc(skillId).delete();
-    // Refresh the list after deletion
     setState(() {
       _mySkills = _fetchUserSkills();
     });
@@ -92,6 +91,7 @@ class _MySkillsPageState extends State<MySkillsPage> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,14 +146,13 @@ class _MySkillsPageState extends State<MySkillsPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.edit_note_rounded),
-                        color: AppColors.primary,
+                          icon: const Icon(Icons.edit_note_rounded),
+                          color: AppColors.primary,
                           onPressed: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => HomePage(
-                                  initialIndex: 2,
+                                builder: (_) => AddSkillPage(
                                   existingData: skill,
                                   skillId: skill['skillId'],
                                 ),

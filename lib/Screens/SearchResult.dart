@@ -5,11 +5,16 @@ import 'SkillCard.dart';
 import 'SkillDetails.dart';
 import 'theme.dart';
 import 'dart:async';
-import '../Service/skilllist.dart'; // <-- Import shared skills and index
+import '../Service/skilllist.dart';
 
 class SearchResultsPage extends StatefulWidget {
   final String initialQuery;
-  const SearchResultsPage({super.key, required this.initialQuery});
+  final bool showSearchField;
+  const SearchResultsPage({
+    super.key,
+    required this.initialQuery,
+    this.showSearchField = true,
+  });
 
   @override
   State<SearchResultsPage> createState() => _SearchResultsPageState();
@@ -21,6 +26,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   List<Map<String, dynamic>> _results = [];
   bool _isLoading = true;
   Timer? _debounce;
+
+  // FIX: Add disposed flag
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -37,6 +45,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
   @override
   void dispose() {
+    _disposed = true; // FIX: Set disposed flag
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _debounce?.cancel();
@@ -44,17 +53,17 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   }
 
   Future<void> _fetchAllSkills() async {
+    // Only show loading if not disposed
+    if (_disposed || !mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      // Batch fetch all users
       final userSnapshot = await FirebaseFirestore.instance.collection('users').get();
       final userMap = {
         for (var doc in userSnapshot.docs)
           doc.id: (doc.data()['Fullname'] ?? 'Unknown')
       };
 
-      // Fetch all skills
       final skillSnapshot = await FirebaseFirestore.instance.collection('skills').get();
       List<Map<String, dynamic>> allSkillsList = skillSnapshot.docs.map((doc) {
         final data = doc.data();
@@ -71,9 +80,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         final bool isPriceEmpty = price == null || (price is num && price <= 0);
         final bool isExchangeForEmpty = exchangeForList.isEmpty;
 
-        // If both are empty, skip
         if (isPriceEmpty && isExchangeForEmpty) {
-          return null; // skip this skill
+          return null;
         }
 
         return {
@@ -88,6 +96,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         };
       }).where((item) => item != null).cast<Map<String, dynamic>>().toList();
 
+      // FIX: Don't call setState if disposed
+      if (_disposed || !mounted) return;
       setState(() {
         _allSkills = allSkillsList;
         _results = allSkillsList;
@@ -95,6 +105,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       });
     } catch (e) {
       print('Error during fetch: $e');
+      if (_disposed || !mounted) return;
       setState(() {
         _allSkills = [];
         _results = [];
@@ -104,7 +115,6 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   }
 
   void _onSearchChanged() {
-    // Debounce to avoid filtering on every keystroke instantly
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 200), () {
       final query = _searchController.text.trim();
@@ -123,12 +133,12 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       }).toList();
     }
 
+    if (_disposed || !mounted) return;
     setState(() {
       _results = filtered;
     });
   }
 
-  // ------------------- Save clicked skill info -------------------
   Future<void> _saveClickedSkillToFirestore(String skillName) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -148,7 +158,6 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       debugPrint('Error saving clicked skill: $e');
     }
   }
-  // ----------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -175,8 +184,13 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
+              child: widget.showSearchField
+                  ? Row(
                 children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -219,6 +233,13 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                     ),
                   ),
                 ],
+              )
+                  : Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ),
             ),
           ),
@@ -258,11 +279,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
-              onTap: () async {
-                // --------- Save clicked skill info ---------
+              onTap: () {
                 final skillName = item['title']?.toString() ?? '';
-                await _saveClickedSkillToFirestore(skillName);
-                // --------- Go to skill details page ---------
+                _saveClickedSkillToFirestore(skillName); // Don't await, background only
                 Navigator.push(
                   context,
                   MaterialPageRoute(

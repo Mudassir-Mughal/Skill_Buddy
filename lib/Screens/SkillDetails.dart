@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'instructorprofile.dart';
 import 'theme.dart';
 
 class SkillDetailsPage extends StatefulWidget {
@@ -34,6 +35,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
     // Fetch skill & instructor data once
     final skillDoc = await FirebaseFirestore.instance.collection('skills').doc(widget.skillId).get();
     if (!skillDoc.exists) {
+      if (!mounted) return; // FIX: Prevent setState after navigation
       setState(() {
         isLoading = false;
         skill = null;
@@ -67,6 +69,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
         .get();
     isRequestSent = requestSnap.docs.isNotEmpty;
 
+    if (!mounted) return; // FIX: Prevent setState after navigation
     setState(() {
       skill = skillData;
       isLoading = false;
@@ -80,9 +83,11 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
         .collection('bookmarks');
     if (isBookmarked) {
       await bookmarksRef.doc(widget.skillId).delete();
+      if (!mounted) return; // FIX: Prevent setState after navigation
       setState(() => isBookmarked = false);
     } else {
       await bookmarksRef.doc(widget.skillId).set({'timestamp': FieldValue.serverTimestamp()});
+      if (!mounted) return; // FIX: Prevent setState after navigation
       setState(() => isBookmarked = true);
     }
   }
@@ -96,12 +101,11 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
       'timestamp': FieldValue.serverTimestamp(),
       'status': 'pending', // <-- add this line!
     });
+    if (!mounted) return; // FIX: Prevent setState after navigation
     setState(() {
       isRequestSent = true;
     });
   }
-
-
 
   Widget _infoRow({required IconData icon, required String text, Color? iconColor, TextStyle? textStyle}) {
     return Padding(
@@ -273,6 +277,14 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
             ),
             const SizedBox(height: 10),
             GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => InstructorProfilePage(instructorId: instructorId),
+                  ),
+                );
+              },
               child: Row(
                 children: [
                   const CircleAvatar(
@@ -387,4 +399,3 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
     );
   }
 }
-

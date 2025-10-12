@@ -248,11 +248,14 @@ class _SetProfilePageState extends State<SetProfilePage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        backgroundColor: AppColors.primary,
         elevation: 0,
-        backgroundColor: AppColors.background,
-        automaticallyImplyLeading: true,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: Text('Set Up Profile', style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w700)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text("Set Profile", style: TextStyle(color: Colors.white)),
+        centerTitle: true,
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -579,8 +582,8 @@ class _SetProfilePageState extends State<SetProfilePage> {
                             children: [
                               ElevatedButton.icon(
                                 onPressed: _saveProfile,
-                                icon: const Icon(Icons.save_rounded, size: 20),
-                                label: const Text('Save & Continue'),
+                                icon: const Icon(Icons.save_rounded, size: 20,color: Colors.white),
+                                label: const Text('Save',style: TextStyle(color: Colors.white)),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primary,
                                   padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
