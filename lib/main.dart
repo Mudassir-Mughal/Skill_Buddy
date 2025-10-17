@@ -6,7 +6,7 @@ import 'Screens/theme.dart';
 import 'Service/MatchService.dart';
 import 'firebase_options.dart';
 
-// 🔑 Global navigator key
+// 🔑 Global navig
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
@@ -15,7 +15,6 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize match service (if still needed)
   MatchService matchService = MatchService();
   await matchService.findMatches();
 
