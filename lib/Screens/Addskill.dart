@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../Service/api_service.dart';
 import 'Myskills.dart';
 import 'home.dart';
 import 'theme.dart';
@@ -8,8 +7,9 @@ import 'theme.dart';
 class AddSkillPage extends StatefulWidget {
   final Map<String, dynamic>? existingData;
   final String? skillId;
+  final String userId;
 
-  const AddSkillPage({super.key, this.existingData, this.skillId});
+  const AddSkillPage({super.key, this.existingData, this.skillId, required this.userId});
 
   @override
   State<AddSkillPage> createState() => _AddSkillPageState();
@@ -28,7 +28,9 @@ class _AddSkillPageState extends State<AddSkillPage> {
   List<String> _skillsWantToLearn = [];
   String? _selectedSkill;
   String? _selectedExchangeSkill;
-  String userRole = "both"; // will fetch from Firestore
+  String userRole = "both";
+  String? userId;
+  String? instructorName;
 
   @override
   void initState() {
@@ -50,22 +52,20 @@ class _AddSkillPageState extends State<AddSkillPage> {
   }
 
   Future<void> _fetchUserDataAndSkills() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    final data = doc.data() ?? {};
+    final profile = await ApiService.getUserProfile(widget.userId);
+    if (profile == null) return;
     setState(() {
-      _skillsToTeach = (data['skillsToTeach'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
-      _skillsWantToLearn = (data['skillsToLearn'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
-      userRole = ((data['role'] ?? "both") as String).toLowerCase();
-
+      userId = profile['_id'] ?? profile['userId'];
+      instructorName = profile['Fullname'] ?? '';
+      _skillsToTeach = List<String>.from(profile['skillsToTeach'] ?? []);
+      _skillsWantToLearn = List<String>.from(profile['skillsToLearn'] ?? []);
+      userRole = (profile['role'] ?? "both").toString().toLowerCase();
       if (_selectedSkill != null && !_skillsToTeach.contains(_selectedSkill!)) {
         _skillsToTeach.insert(0, _selectedSkill!);
       }
       if (_selectedSkill == null && _skillsToTeach.isNotEmpty) {
         _selectedSkill = _skillsToTeach.first;
       }
-
       if (_selectedExchangeSkill != null && !_skillsWantToLearn.contains(_selectedExchangeSkill!)) {
         if (_selectedExchangeSkill!.isNotEmpty) {
           _skillsWantToLearn.insert(0, _selectedExchangeSkill!);
@@ -81,12 +81,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
 
   Future<void> _saveSkill() async {
     if (_formKey.currentState!.validate()) {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
+      if (userId == null) return;
       final skillData = {
-        'userId': user.uid,
-        'instructor': user.displayName ?? '',
+        'userId': userId,
+        'instructor': instructorName ?? '',
         'title': _selectedSkill ?? '',
         'description': _descriptionController.text.trim(),
         'expertlevel': _expertlevel,
@@ -98,30 +96,33 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'price': (userRole == "both" || userRole == "instructor")
             ? int.tryParse(_priceController.text.trim()) ?? 0
             : 0,
-        'timestamp': Timestamp.now(),
+        'timestamp': DateTime.now().toIso8601String(),
       };
-
+      bool success = false;
       if (widget.skillId != null) {
-        await FirebaseFirestore.instance
-            .collection('skills')
-            .doc(widget.skillId)
-            .update(skillData);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Skill updated successfully!')),
-        );
+        final result = await ApiService.updateSkill(widget.skillId!, skillData);
+        success = result != null;
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Skill updated successfully!')),
+          );
+        }
       } else {
-        await FirebaseFirestore.instance.collection('skills').add(skillData);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Skill added successfully!')),
+        final result = await ApiService.addSkill(skillData);
+        success = result != null;
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Skill added successfully!')),
+          );
+        }
+      }
+      if (success) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => HomePage(userId: userId!, initialIndex: 1)),
+          (route) => false,
         );
       }
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => HomePage(initialIndex: 1)), // MySkills tab
-            (route) => false,
-      );
     }
   }
 
@@ -302,7 +303,12 @@ class _AddSkillPageState extends State<AddSkillPage> {
                       ),
                     ],
                   ),
-                  child: DropdownButtonFormField<String>(
+                  child: _skillsToTeach.isEmpty
+                      ? Text(
+                    "No skills to teach found in your profile. Please add skills to teach in your profile first.",
+                    style: TextStyle(color: Colors.red),
+                  )
+                      : DropdownButtonFormField<String>(
                     value: (_skillsToTeach.contains(_selectedSkill)) ? _selectedSkill : null,
                     items: _skillsToTeach.map((skill) {
                       return DropdownMenuItem(
@@ -450,7 +456,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
                     decoration: _getBoxDecoration(),
                     child: _skillsWantToLearn.isEmpty
                         ? Text(
-                      "No skills to exchange. Please select skills to learn in your profile.",
+                      "No skills to exchange found in your profile. Please add skills to learn in your profile first.",
                       style: TextStyle(color: Colors.red),
                     )
                         : DropdownButtonFormField<String>(
@@ -553,3 +559,4 @@ class _AddSkillPageState extends State<AddSkillPage> {
     );
   }
 }
+

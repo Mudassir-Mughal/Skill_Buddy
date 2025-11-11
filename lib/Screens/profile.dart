@@ -3,16 +3,29 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../Service/api_service.dart';
 import 'setprofile.dart';
 import 'theme.dart';
 
 const String cloudName = "dthkthzzf";
 const String uploadPreset = "unsigned_preset";
 
-class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key});
+class ProfilePage extends StatefulWidget {
+  final String userId;
+  const ProfilePage({super.key, required this.userId});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  late Future<Map<String, dynamic>?> _userFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _userFuture = ApiService.getUserProfile(widget.userId);
+  }
 
   Future<String?> _uploadToCloudinary(Uint8List fileBytes, String fileName) async {
     try {
@@ -29,7 +42,7 @@ class ProfilePage extends StatelessWidget {
         final data = jsonDecode(res.body);
         return data['secure_url'];
       } else {
-        print("Cloudinary Upload Failed: ${res.body}");
+        print("Cloudinary Upload Failed: \\${res.body}");
         return null;
       }
     } catch (e) {
@@ -38,10 +51,7 @@ class ProfilePage extends StatelessWidget {
     }
   }
 
-  Future<void> _pickAndUploadImage(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
+  Future<void> _pickAndUploadImage(BuildContext context, Map<String, dynamic> userData) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: false,
@@ -55,13 +65,22 @@ class ProfilePage extends StatelessWidget {
       final imageUrl = await _uploadToCloudinary(fileBytes, fileName);
 
       if (imageUrl != null) {
-        await FirebaseFirestore.instance.collection("users").doc(user.uid).update({
-          "photoUrl": imageUrl,
-        });
+        final userId = widget.userId;
+        final success = await ApiService.updateProfile(userId, {'photoUrl': imageUrl});
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profile picture updated successfully!")),
-        );
+        if (success) {
+          setState(() {
+            _userFuture = ApiService.getUserProfile(userId);
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Profile picture updated successfully!")),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Failed to update profile picture!")),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Image upload failed!")),
@@ -72,9 +91,6 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final userId = FirebaseAuth.instance.currentUser!.uid;
-    final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -87,8 +103,8 @@ class ProfilePage extends StatelessWidget {
         title: const Text("Profile", style: TextStyle(color: Colors.white)),
         centerTitle: true,
       ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: userDoc.snapshots(),
+      body: FutureBuilder<Map<String, dynamic>?>(
+        future: _userFuture,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return const Center(child: Text("Error loading profile."));
@@ -96,11 +112,10 @@ class ProfilePage extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
+          final data = snapshot.data;
+          if (data == null) {
             return const Center(child: Text("No user data found."));
           }
-
-          final data = snapshot.data!.data() as Map<String, dynamic>;
 
           return Center(
             child: ConstrainedBox(
@@ -143,7 +158,7 @@ class ProfilePage extends StatelessWidget {
                               backgroundColor: AppColors.primary,
                               child: Icon(Icons.camera_alt, color: Colors.white, size: 20),
                             ),
-                            onPressed: () => _pickAndUploadImage(context),
+                            onPressed: () => _pickAndUploadImage(context, data),
                           ),
                         ],
                       ),
@@ -211,7 +226,6 @@ class ProfilePage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      // --- Delete Account Button REMOVED ---
                     ],
                   ),
                 ),

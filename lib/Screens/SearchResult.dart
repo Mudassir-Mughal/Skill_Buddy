@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'SkillCard.dart';
 import 'SkillDetails.dart';
 import 'theme.dart';
 import 'dart:async';
 import '../Service/skilllist.dart';
+import '../Service/api_service.dart';
 
 class SearchResultsPage extends StatefulWidget {
   final String initialQuery;
@@ -33,14 +33,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   @override
   void initState() {
     super.initState();
-
     _searchController = TextEditingController(text: widget.initialQuery);
     _searchController.addListener(_onSearchChanged);
-    _fetchAllSkills().then((_) {
-      if (widget.initialQuery.isNotEmpty) {
-        _filterSkills(widget.initialQuery);
-      }
-    });
+    _fetchSkills(widget.initialQuery);
   }
 
   @override
@@ -52,55 +47,41 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     super.dispose();
   }
 
-  Future<void> _fetchAllSkills() async {
-    // Only show loading if not disposed
+  Future<void> _fetchSkills(String query) async {
     if (_disposed || !mounted) return;
     setState(() => _isLoading = true);
-
     try {
-      final userSnapshot = await FirebaseFirestore.instance.collection('users').get();
-      final userMap = {
-        for (var doc in userSnapshot.docs)
-          doc.id: (doc.data()['Fullname'] ?? 'Unknown')
-      };
-
-      final skillSnapshot = await FirebaseFirestore.instance.collection('skills').get();
-      List<Map<String, dynamic>> allSkillsList = skillSnapshot.docs.map((doc) {
-        final data = doc.data();
-        final userId = data['userId'];
-        final instructorName = userMap[userId] ?? 'Unknown';
-
-        final dynamic price = data['price'];
-        final List<dynamic> exchangeForRaw = data['exchangeFor'] ?? [];
+      final List<Map<String, dynamic>> skills = await ApiService.getSkills(search: query);
+      for (var item in skills) {
+        print('Skill from backend: ' + item.toString());
+      }
+      List<Map<String, dynamic>> filteredSkills = skills.map((item) {
+        final dynamic price = item['price'];
+        final List<dynamic> exchangeForRaw = item['exchangeFor'] ?? [];
         final List<String> exchangeForList = exchangeForRaw
             .whereType<String>()
             .where((e) => e.trim().isNotEmpty)
             .toList();
-
         final bool isPriceEmpty = price == null || (price is num && price <= 0);
         final bool isExchangeForEmpty = exchangeForList.isEmpty;
-
         if (isPriceEmpty && isExchangeForEmpty) {
           return null;
         }
-
         return {
-          'skillId': doc.id,
-          'title': data['title'] ?? '',
-          'description': data['description'] ?? '',
-          'totalClasses': data['totalClasses'] ?? 0,
-          'duration': data['duration'] ?? '',
+          'skillId': (item['_id'] != null) ? item['_id'].toString() : (item['skillId'] ?? ''),
+          'title': item['title'] ?? '',
+          'description': item['description'] ?? '',
+          'totalClasses': item['totalClasses'] ?? 0,
+          'duration': item['duration'] ?? '',
           'price': isPriceEmpty ? null : price,
           'exchangeFor': isExchangeForEmpty ? null : exchangeForList,
-          'instructor': instructorName,
+          'instructor': item['instructor'] ?? 'Unknown',
         };
       }).where((item) => item != null).cast<Map<String, dynamic>>().toList();
-
-      // FIX: Don't call setState if disposed
       if (_disposed || !mounted) return;
       setState(() {
-        _allSkills = allSkillsList;
-        _results = allSkillsList;
+        _allSkills = filteredSkills;
+        _results = filteredSkills;
         _isLoading = false;
       });
     } catch (e) {
@@ -118,44 +99,19 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 200), () {
       final query = _searchController.text.trim();
-      _filterSkills(query);
+      _fetchSkills(query);
     });
   }
 
-  void _filterSkills(String query) async {
-    List<Map<String, dynamic>> filtered;
-    if (query.isEmpty) {
-      filtered = _allSkills;
-    } else {
-      filtered = _allSkills.where((item) {
-        final title = (item['title'] ?? '').toString().toLowerCase();
-        return title.contains(query.toLowerCase());
-      }).toList();
-    }
-
-    if (_disposed || !mounted) return;
-    setState(() {
-      _results = filtered;
-    });
-  }
-
-  Future<void> _saveClickedSkillToFirestore(String skillName) async {
+  Future<void> _saveClickedSkillToBackend(String skillName) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-
     final skillIndex = skillToIndex[skillName.toLowerCase()];
-    if (skillIndex == null) {
-      return;
-    }
-
+    if (skillIndex == null) return;
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
-        'lastClickedSkill': skillName,
-        'lastClickedSkillIndex': skillIndex,
-        'lastClickedSkillAt': FieldValue.serverTimestamp(),
-      });
+      await ApiService.saveLastClickedSkill(uid, skillName, skillIndex);
     } catch (e) {
-      debugPrint('Error saving clicked skill: $e');
+      debugPrint('Error saving clicked skill to backend: $e');
     }
   }
 
@@ -169,7 +125,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         child: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [AppColors.primary, AppColors.primary.withOpacity(0.85)],
+              colors: [AppColors.primary.withAlpha((1.0 * 255).toInt()), AppColors.primary.withAlpha((0.85 * 255).toInt())],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -194,7 +150,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.13),
+                        color: Colors.white.withAlpha((0.13 * 255).toInt()),
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: TextField(
@@ -203,7 +159,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                         decoration: InputDecoration(
                           hintText: 'Search skills...',
                           hintStyle: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withAlpha((0.7 * 255).toInt()),
                             fontWeight: FontWeight.w500,
                             letterSpacing: 0.3,
                           ),
@@ -226,7 +182,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.13),
+                        color: Colors.white.withAlpha((0.13 * 255).toInt()),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.clear, color: Colors.white, size: 22),
@@ -281,11 +237,20 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
               borderRadius: BorderRadius.circular(16),
               onTap: () {
                 final skillName = item['title']?.toString() ?? '';
-                _saveClickedSkillToFirestore(skillName); // Don't await, background only
+                final skillId = item['skillId'] ?? '';
+                if (skillId.isEmpty || skillId.length != 24) {
+                  print('ERROR: Invalid skillId passed to SkillDetailsPage: ' + skillId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Invalid skill id, cannot open details.')),
+                  );
+                  return;
+                }
+                print('Navigating to SkillDetailsPage with skillId: ' + skillId);
+                _saveClickedSkillToBackend(skillName); // Don't await, background only
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => SkillDetailsPage(skillId: item['skillId']),
+                    builder: (_) => SkillDetailsPage(skillId: skillId),
                   ),
                 );
               },

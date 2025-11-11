@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
 import 'login.dart';
+import 'setprofile.dart';
+import '../Service/api_service.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -27,7 +27,7 @@ class _SignUpPageState extends State<SignUpPage> {
   String? _generalError;
 
   bool isValidEmail(String email) {
-    return RegExp(r"^[\w-\.]+@([\w-]+\.)+[\w]{2,4}$").hasMatch(email);
+    return RegExp(r"^[\w-\.]+@([\w-]+\.)+[\w]{2,4}").hasMatch(email);
   }
 
   Future<void> signUpUser() async {
@@ -41,87 +41,35 @@ class _SignUpPageState extends State<SignUpPage> {
 
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-
       try {
         final email = emailController.text.trim();
         final password = passwordController.text;
         final name = nameController.text.trim();
 
-        // Create user in Firebase
-        final userCredential = await FirebaseAuth.instance
-            .createUserWithEmailAndPassword(email: email, password: password);
-
-        final user = userCredential.user;
-
-        if (user != null) {
-          try {
-            // Reload user to ensure fresh state
-            await user.reload();
-
-            // Send verification email
-            await user.sendEmailVerification();
-            print("✅ Verification email sent successfully to ${user.email}");
-
-            // Save user details in Firestore
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .set({
-              'uid': user.uid,
-              'email': user.email,
-              'fullName': name,
-              'createdAt': Timestamp.now(),
-              'profileSet': false,
-            });
-
-            if (!mounted) return;
-
-            // Show success message
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  "✅ Account created! Please check your inbox (or Spam) to verify your account.",
-                ),
-                duration: Duration(seconds: 4),
+        // Call backend API for signup and get userId from response
+        final response = await ApiService.signupWithId(email, password);
+        if (response != null && response['userId'] != null) {
+          final userId = response['userId'];
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "✅ Account created! Please set up your profile.",
               ),
-            );
-
-            // Delay before navigating (so snackbar is visible)
-            await Future.delayed(const Duration(seconds: 2));
-
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const LoginPage()),
-            );
-          } catch (e) {
-            print("❌ Error sending verification email: $e"); // Debugging
-            setState(() {
-              _generalError =
-              "⚠️ Could not send verification email. Please try again later.";
-            });
-          }
-        }
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'weak-password') {
-          setState(() {
-            _passwordError = "Password should be at least 6 characters.";
-          });
-        } else if (e.code == 'email-already-in-use') {
-          setState(() {
-            _emailError = "This email is already registered.";
-          });
-        } else if (e.code == 'invalid-email') {
-          setState(() {
-            _emailError = "Invalid email format.";
-          });
+              duration: Duration(seconds: 4),
+            ),
+          );
+          await Future.delayed(const Duration(seconds: 2));
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => SetProfilePage(userId: userId)),
+          );
         } else {
-          print("❌ FirebaseAuthException: ${e.message}");
           setState(() {
-            _generalError = e.message ?? "Sign up failed. Please try again.";
+            _generalError = "Sign up failed. Email may already be registered.";
           });
         }
       } catch (e) {
-        print("❌ Unexpected signup error: $e"); // Debugging
         setState(() {
           _generalError = "Unexpected error. Please try again.";
         });
@@ -130,7 +78,6 @@ class _SignUpPageState extends State<SignUpPage> {
       }
     }
   }
-
 
   InputDecoration inputStyle(String label, IconData icon, {String? errorText}) {
     return InputDecoration(

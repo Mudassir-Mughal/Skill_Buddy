@@ -1,12 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../Service/api_service.dart';
 import 'Addskill.dart';
 import 'home.dart';
 import 'theme.dart';
 
 class MySkillsPage extends StatefulWidget {
-  const MySkillsPage({Key? key}) : super(key: key);
+  final String userId;
+  const MySkillsPage({Key? key, required this.userId}) : super(key: key);
 
   @override
   State<MySkillsPage> createState() => _MySkillsPageState();
@@ -22,29 +22,26 @@ class _MySkillsPageState extends State<MySkillsPage> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchUserSkills() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) return [];
-
-    final querySnapshot = await FirebaseFirestore.instance
-        .collection('skills')
-        .where('userId', isEqualTo: userId)
-        .get();
-
-    return querySnapshot.docs.map((doc) {
-      final data = doc.data();
-      data['skillId'] = doc.id;
-      return data;
-    }).toList();
+    final userId = widget.userId;
+    if (userId.isEmpty) return [];
+    final result = await ApiService.getSkillsByUser(userId);
+    return result;
   }
 
   Future<void> _deleteSkill(String skillId) async {
-    await FirebaseFirestore.instance.collection('skills').doc(skillId).delete();
-    setState(() {
-      _mySkills = _fetchUserSkills();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Skill deleted successfully!')),
-    );
+    final success = await ApiService.deleteSkill(skillId);
+    if (success) {
+      setState(() {
+        _mySkills = _fetchUserSkills();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Skill deleted successfully!')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to delete skill.')),
+      );
+    }
   }
 
   void _showDeleteConfirmation(String skillId) {
@@ -146,19 +143,23 @@ class _MySkillsPageState extends State<MySkillsPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                          icon: const Icon(Icons.edit_note_rounded),
-                          color: AppColors.primary,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AddSkillPage(
-                                  existingData: skill,
-                                  skillId: skill['skillId'],
-                                ),
+                        icon: const Icon(Icons.edit_note_rounded),
+                        color: AppColors.primary,
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AddSkillPage(
+                                existingData: skill,
+                                skillId: skill['skillId'],
+                                userId: widget.userId,
                               ),
-                            );
-                          }
+                            ),
+                          );
+                          setState(() {
+                            _mySkills = _fetchUserSkills();
+                          });
+                        },
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),

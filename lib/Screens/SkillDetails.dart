@@ -1,6 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../Service/api_service.dart';
 import 'instructorprofile.dart';
 import 'theme.dart';
 
@@ -27,15 +26,18 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
   @override
   void initState() {
     super.initState();
-    currentUserId = FirebaseAuth.instance.currentUser!.uid;
+
+    // ✅ Replace this with your actual logged-in user ID
+    currentUserId = ApiService.currentUserId ?? '';
+    // Example: use from auth
+
     _loadSkillAndState();
   }
 
   Future<void> _loadSkillAndState() async {
-    // Fetch skill & instructor data once
-    final skillDoc = await FirebaseFirestore.instance.collection('skills').doc(widget.skillId).get();
-    if (!skillDoc.exists) {
-      if (!mounted) return; // FIX: Prevent setState after navigation
+    final skillData = await ApiService.getSkillById(widget.skillId);
+    if (skillData == null) {
+      if (!mounted) return;
       setState(() {
         isLoading = false;
         skill = null;
@@ -43,33 +45,17 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
       return;
     }
 
-    final skillData = skillDoc.data()!;
     instructorId = skillData['userId'] ?? '';
-    isOwner = instructorId == currentUserId;
+    isOwner = instructorId == currentUserId; // ✅ owner check
 
-    // Fetch instructor name
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(instructorId).get();
-    instructorName = userDoc.data()?['Fullname'] ?? 'Unknown';
+    final userData = await ApiService.getUserById(instructorId);
+    instructorName = userData?['Fullname'] ?? 'Unknown';
 
-    // Check bookmark
-    final bookmarkDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUserId)
-        .collection('bookmarks')
-        .doc(widget.skillId)
-        .get();
-    isBookmarked = bookmarkDoc.exists;
+    isBookmarked = await ApiService.isBookmarked(currentUserId, widget.skillId);
 
-    // Check sent request
-    final requestSnap = await FirebaseFirestore.instance
-        .collection('requests')
-        .where('skillId', isEqualTo: widget.skillId)
-        .where('senderId', isEqualTo: currentUserId)
-        .limit(1)
-        .get();
-    isRequestSent = requestSnap.docs.isNotEmpty;
+    isRequestSent = await ApiService.isRequestSent(currentUserId, widget.skillId);
 
-    if (!mounted) return; // FIX: Prevent setState after navigation
+    if (!mounted) return;
     setState(() {
       skill = skillData;
       isLoading = false;
@@ -77,35 +63,39 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
   }
 
   Future<void> _toggleBookmark() async {
-    final bookmarksRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUserId)
-        .collection('bookmarks');
     if (isBookmarked) {
-      await bookmarksRef.doc(widget.skillId).delete();
-      if (!mounted) return; // FIX: Prevent setState after navigation
+      await ApiService.removeBookmark(currentUserId, widget.skillId);
+      if (!mounted) return;
       setState(() => isBookmarked = false);
     } else {
-      await bookmarksRef.doc(widget.skillId).set({'timestamp': FieldValue.serverTimestamp()});
-      if (!mounted) return; // FIX: Prevent setState after navigation
+      await ApiService.addBookmark(currentUserId, widget.skillId);
+      if (!mounted) return;
       setState(() => isBookmarked = true);
     }
   }
 
   Future<void> _sendRequest() async {
-    await FirebaseFirestore.instance.collection('requests').add({
-      'skillId': widget.skillId,
-      'title': skill?['title'] ?? '',
-      'senderId': currentUserId,
-      'receiverId': instructorId,
-      'timestamp': FieldValue.serverTimestamp(),
-      'status': 'pending', // <-- add this line!
-    });
-    if (!mounted) return; // FIX: Prevent setState after navigation
-    setState(() {
-      isRequestSent = true;
-    });
+    final success = await ApiService.sendRequest(
+      skillId: widget.skillId,
+      title: skill?['title'] ?? '',
+      senderId: currentUserId,
+      receiverId: instructorId,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      setState(() {
+        isRequestSent = true;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to send request. Please try again.')),
+      );
+    }
   }
+
+
 
   Widget _infoRow({required IconData icon, required String text, Color? iconColor, TextStyle? textStyle}) {
     return Padding(
@@ -194,12 +184,13 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
     final int weeks = (totalClasses / 5).ceil();
     final String classDuration = skill?['duration'] ?? '30 mins';
 
-    // Hide price and exchangeFor if they are null, empty, or 0
     final showPrice = skill?['price'] != null &&
         skill!['price'].toString().trim().isNotEmpty &&
         skill?['price'] != 0;
+
     final List<dynamic> exchangeForList = (skill?['exchangeFor'] as List<dynamic>?) ?? [];
-    final bool showExchangeFor = exchangeForList.isNotEmpty && exchangeForList.any((e) => e.toString().trim().isNotEmpty);
+    final bool showExchangeFor = exchangeForList.isNotEmpty &&
+        exchangeForList.any((e) => e.toString().trim().isNotEmpty);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -276,6 +267,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
               ],
             ),
             const SizedBox(height: 10),
+
             GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -299,19 +291,17 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                       fontSize: 16,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600,
-
                       letterSpacing: 0.1,
                     ),
                   ),
-                  const SizedBox(width: 4),
                 ],
               ),
             ),
+
             _cardSection(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Description
                   Text(
                     skill?['description'] ?? '',
                     style: theme.textTheme.bodyLarge?.copyWith(
@@ -321,7 +311,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Class info
+
                   _infoRow(
                     icon: Icons.access_time,
                     text: '$weeks week(s), $totalClasses classes',
@@ -330,6 +320,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                     icon: Icons.schedule,
                     text: 'Each class: $classDuration hour',
                   ),
+
                   if (showExchangeFor)
                     Padding(
                       padding: const EdgeInsets.only(top: 10.0, bottom: 4),
@@ -345,21 +336,23 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                               children: List<Widget>.from(
                                 exchangeForList
                                     .where((e) => e.toString().trim().isNotEmpty)
-                                    .map((e) => Chip(
-                                  label: Text(
-                                    e.toString(),
-                                    style: const TextStyle(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 13,
+                                    .map(
+                                      (e) => Chip(
+                                    label: Text(
+                                      e.toString(),
+                                      style: const TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 13,
+                                      ),
                                     ),
+                                    backgroundColor: AppColors.primary.withOpacity(0.08),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
                                   ),
-                                  backgroundColor: AppColors.primary.withOpacity(0.08),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                                )),
+                                ),
                               ),
                             ),
                           ),
@@ -369,6 +362,8 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                 ],
               ),
             ),
+
+            // ✅ FINAL BUTTON LOGIC — EXACTLY AS YOU ASKED
             if (!isOwner)
               isRequestSent
                   ? _requestStatus()
@@ -388,7 +383,11 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                     icon: const Icon(Icons.send, color: AppColors.buttonText, size: 22),
                     label: const Text(
                       'Send Request',
-                      style: TextStyle(fontSize: 18, color: AppColors.buttonText, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: AppColors.buttonText,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),

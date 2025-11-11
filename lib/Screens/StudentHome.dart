@@ -1,17 +1,16 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:skill_buddy_fyp/Screens/profile.dart';
 import 'package:skill_buddy_fyp/Screens/settings.dart';
-import 'Addskill.dart';
 import 'Chatlist.dart';
 import 'login.dart';
 import "Homecontent.dart";
 import 'theme.dart';
-import 'Myskills.dart';
 import 'ViewRequest.dart';
 import 'package:animations/animations.dart';
+import '../Service/api_service.dart';
+
 
 class StudentHomePage extends StatefulWidget {
   const StudentHomePage({super.key});
@@ -23,8 +22,8 @@ class StudentHomePage extends StatefulWidget {
 class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
-
-  late final List<Widget> _pages;
+  String userRole = "student";
+  List<Widget> _pages = [];
 
   static const List<String> _pageTitles = [
     'Home',
@@ -35,23 +34,23 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-
-    _pages = [
-      HomeScreenContent(),
-      if (currentUserId != null)
-        ChatListPage(currentUserId: currentUserId!)
-      else
-        Center(child: Text('User not logged in')),
-      ViewRequestsPage(role: "Student"),
-    ];
+    _fetchUserRoleAndSetupPages();
   }
 
-  // Function to fetch user name from Firestore
-  Future<String> fetchUserName() async {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    if (currentUserId == null) return '';
-    final doc = await FirebaseFirestore.instance.collection('users').doc(currentUserId).get();
-    return doc.data()?['Fullname'] ?? '';
+  Future<void> _fetchUserRoleAndSetupPages() async {
+    if (currentUserId == null) return;
+    final data = await ApiService.getUserProfile(currentUserId!);
+    userRole = (data?['role'] ?? 'student').toString().toLowerCase();
+    setState(() {
+      _pages = [
+        HomeScreenContent(),
+        if (currentUserId != null)
+          ChatListPage(currentUserId: currentUserId!)
+        else
+          Center(child: Text('User not logged in')),
+        ViewRequestsPage(role: userRole),
+      ];
+    });
   }
 
   @override
@@ -188,27 +187,12 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                       ),
                     ),
                     const SizedBox(height: 12),
-                    FutureBuilder<String>(
-                      future: fetchUserName(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return Text(
-                            'Loading...',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          );
-                        }
-                        final name = snapshot.data ?? '';
-                        return Text(
-                          name,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      },
+                    Text(
+                      FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Container(
@@ -232,7 +216,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                   Navigator.pop(context);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ProfilePage()),
+                      MaterialPageRoute(builder: (_) => ProfilePage(userId: currentUserId ?? ''))
                   );
                 },
                 theme: theme,

@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:skill_buddy_fyp/Screens/setprofile.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../Service/api_service.dart';
+import 'setprofile.dart';
 import 'AppidentityIcon.dart';
 import 'StudentHome.dart';
 import 'home.dart';
@@ -60,64 +60,43 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
-  // Your existing _navigateNext() function
+  // Replace _navigateNext with MongoDB logic, no shared_preferences
   void _navigateNext() async {
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user != null) {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      if (userDoc.exists) {
-        final data = userDoc.data();
-
-        // Safely get role
-        final role = data != null && data.containsKey('role') ? data['role'] : null;
-
-        // Safely get profileSet
-        final profileSet = data != null && data.containsKey('profileSet') ? data['profileSet'] : false;
-
+    // Restore userId from persistent storage
+    final prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString('userId');
+    if (userId != null && userId.isNotEmpty) {
+      ApiService.currentUserId = userId;
+      final userData = await ApiService.getUserProfile(userId);
+      if (userData != null) {
+        final role = userData['role'];
+        final profileSet = userData['profileSet'] ?? false;
         if (profileSet == true) {
           if (role == 'Student') {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (_) => const StudentHomePage()),
             );
-          } else if (role != null) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const HomePage()),
-            );
           } else {
-            // Role missing but profile set → fallback
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (_) => const LoginPage()),
+              MaterialPageRoute(builder: (_) => HomePage(userId: userId)),
             );
           }
         } else {
-          // Profile not set → navigate to SetProfilePage
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const SetProfilePage(isFromSignUp: false)),
+            MaterialPageRoute(builder: (_) => SetProfilePage(isFromSignUp: false, userId: userId)),
           );
         }
-      } else {
-        // User document missing
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-        );
+        return;
       }
-    } else {
-      // User not logged in
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-      );
     }
+    // If not logged in or user not found, go to login
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
   }
 
   @override

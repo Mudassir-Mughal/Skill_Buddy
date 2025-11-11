@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,14 +10,15 @@ import "Homecontent.dart";
 import 'theme.dart';
 import 'Myskills.dart';
 import 'ViewRequest.dart';
-import 'package:animations/animations.dart';
+import '../Service/api_service.dart';
 
 class HomePage extends StatefulWidget {
+  final String userId;
   final int initialIndex;
   final Map<String, dynamic>? existingData;
   final String? skillId;
 
-  const HomePage({super.key, this.initialIndex = 0,this.existingData, this.skillId});
+  const HomePage({super.key, required this.userId, this.initialIndex = 0, this.existingData, this.skillId});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -27,8 +27,9 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   late int _selectedIndex;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  String get currentUserId => widget.userId;
   String userRole = "both";
+  Map<String, dynamic>? userProfileData;
 
   List<Widget> _pages = [];
 
@@ -44,71 +45,54 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
-    _fetchUserRoleAndSetupPages();
+    _pages = [
+      HomeScreenContent(),
+      MySkillsPage(userId: currentUserId),
+      AddSkillPage(
+        existingData: widget.existingData,
+        skillId: widget.skillId,
+        userId: currentUserId,
+      ),
+      ChatListPage(currentUserId: currentUserId),
+      ViewRequestsPage(role: userRole),
+    ];
+    _fetchUserProfile();
   }
 
-  Future<void> _fetchUserRoleAndSetupPages() async {
-    if (currentUserId == null) return;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(currentUserId).get();
-    final data = doc.data();
-    userRole = (data?['role'] ?? 'both').toString().toLowerCase();
-
+  Future<void> _fetchUserProfile() async {
+    if (currentUserId.isEmpty) return;
+    final data = await ApiService.getUserProfile(currentUserId);
     setState(() {
-      _pages = [
-        HomeScreenContent(),
-        MySkillsPage(),
-        AddSkillPage(
-          existingData: widget.existingData,
-          skillId: widget.skillId,
-        ),
-        if (currentUserId != null)
-          ChatListPage(currentUserId: currentUserId!)
-        else
-          const Center(child: Text('User not logged in')),
-        ViewRequestsPage(role: userRole), // dynamically instructor, learner, both
-      ];
+      userRole = (data?['role'] ?? 'both').toString().toLowerCase();
+      userProfileData = data;
     });
   }
+
   Widget _profileAvatar({double radius = 20, bool showBorder = true}) {
-    if (currentUserId == null) {
+    if (userProfileData == null) {
       return CircleAvatar(
         radius: radius,
         backgroundColor: AppColors.primary.withOpacity(0.12),
         child: Icon(Icons.person_outline, color: AppColors.primary, size: radius),
       );
     }
-
-    final docStream = FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots();
-
-    return StreamBuilder<DocumentSnapshot>(
-      stream: docStream,
-      builder: (context, snapshot) {
-        String? photoUrl;
-        if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
-          photoUrl = (data != null ? (data['photoUrl'] as String?) : null);
-        }
-
-        final avatar = CircleAvatar(
-          radius: radius,
-          backgroundColor: AppColors.primary.withOpacity(0.12),
-          backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
-          child: (photoUrl == null || photoUrl.isEmpty)
-              ? Icon(Icons.person_outline, color: AppColors.primary, size: radius)
-              : null,
-        );
-
-        if (!showBorder) return avatar;
-
-        return Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.primary.withOpacity(0.08),
-          ),
-          child: avatar,
-        );
-      },
+    String? photoUrl = userProfileData?['photoUrl'];
+    final avatar = CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary.withOpacity(0.12),
+      backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+      child: (photoUrl == null || photoUrl.isEmpty)
+          ? Icon(Icons.person_outline, color: AppColors.primary, size: radius)
+          : null,
+    );
+    if (!showBorder) return avatar;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primary.withOpacity(0.08),
+      ),
+      child: avatar,
     );
   }
 
@@ -419,7 +403,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _showProfileCard(BuildContext context) {
     final theme = Theme.of(context);
-
+    final displayName = userProfileData?['Fullname'] ?? userProfileData?['fullName'] ?? FirebaseAuth.instance.currentUser?.displayName ?? 'User';
+    final email = userProfileData?['email'] ?? FirebaseAuth.instance.currentUser?.email ?? '';
+    final photoUrl = userProfileData?['photoUrl'] ?? '';
     showDialog(
       context: context,
       barrierColor: Colors.black54,
@@ -427,129 +413,109 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        child: StreamBuilder<DocumentSnapshot>(
-          stream: currentUserId != null
-              ? FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots()
-              : const Stream.empty(),
-          builder: (context, snapshot) {
-            String displayName = 'User';
-            String email = '';
-            String? photoUrl;
-
-            if (snapshot.hasData && snapshot.data!.exists) {
-              final data = snapshot.data!.data() as Map<String, dynamic>?;
-              if (data != null) {
-                displayName = (data['Fullname'] ?? data['fullName'] ?? FirebaseAuth.instance.currentUser?.displayName ?? 'User').toString();
-                email = (data['email'] ?? FirebaseAuth.instance.currentUser?.email ?? '').toString();
-                photoUrl = (data['photoUrl'] as String?) ?? '';
-              }
-            }
-
-            return Container(
-              width: 320,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    spreadRadius: 0,
-                  ),
-                ],
+        child: Container(
+          width: 320,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                spreadRadius: 0,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          theme.colorScheme.primary,
-                          theme.colorScheme.primary.withOpacity(0.85),
-                        ],
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.primary.withOpacity(0.85),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
+                      child: CircleAvatar(
+                        radius: 38,
+                        backgroundColor: Colors.white,
+                        backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                            ? NetworkImage(photoUrl)
+                            : null,
+                        child: (photoUrl == null || photoUrl.isEmpty)
+                            ? Icon(Icons.person, size: 44, color: theme.colorScheme.primary)
+                            : null,
                       ),
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: CircleAvatar(
-                            radius: 38,
-                            backgroundColor: Colors.white,
-                            backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-                                ? NetworkImage(photoUrl)
-                                : null,
-                            child: (photoUrl == null || photoUrl.isEmpty)
-                                ? Icon(Icons.person, size: 44, color: theme.colorScheme.primary)
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          displayName,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          email,
-                          style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
+                    const SizedBox(height: 12),
+                    Text(
+                      displayName,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  _buildProfileMenuItem(
-                    icon: Icons.person_outline,
-                    title: 'My Profile',
-                    subtitle: 'View and edit your profile',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
-                    },
-                    theme: theme,
-                  ),
-                  _buildProfileMenuItem(
-                    icon: Icons.settings_outlined,
-                    title: 'Settings',
-                    subtitle: 'App preferences and more',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
-                    },
-                    theme: theme,
-                  ),
-                  const Divider(height: 1),
-                  _buildProfileMenuItem(
-                    icon: Icons.logout,
-                    title: 'Logout',
-                    subtitle: 'Sign out from your account',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _handleLogout(context);
-                    },
-                    theme: theme,
-                    isDestructive: true,
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      email,
+                      style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ),
               ),
-            );
-          },
+              _buildProfileMenuItem(
+                icon: Icons.person_outline,
+                title: 'My Profile',
+                subtitle: 'View and edit your profile',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => ProfilePage(userId: currentUserId)));
+                },
+                theme: theme,
+              ),
+              _buildProfileMenuItem(
+                icon: Icons.settings_outlined,
+                title: 'Settings',
+                subtitle: 'App preferences and more',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+                },
+                theme: theme,
+              ),
+              const Divider(height: 1),
+              _buildProfileMenuItem(
+                icon: Icons.logout,
+                title: 'Logout',
+                subtitle: 'Sign out from your account',
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleLogout(context);
+                },
+                theme: theme,
+                isDestructive: true,
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

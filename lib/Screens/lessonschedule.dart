@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
 import '../Service/video_api.dart'; // <-- Import your createMeeting() and token
+import '../Service/api_service.dart'; // <-- Add this import for API calls
 
 class LessonSchedulePage extends StatefulWidget {
   final String currentUserId; // Instructor ID
@@ -174,43 +174,44 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
       "instructorId": widget.currentUserId,
       "studentId": widget.peerId,
       "outline": _outlineController.text.trim(),
-      "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
+      "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
       "start_time": "${_selectedStartTime!.hour.toString().padLeft(2, '0')}:${_selectedStartTime!.minute.toString().padLeft(2, '0')}",
       "end_time": "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}",
       "enabled": false,
     };
 
     if (widget.isEdit && widget.lessonId != null) {
-      final lessonRef = FirebaseFirestore.instance.collection("lessons").doc(widget.lessonId);
-
-      // Get current data to preserve roomId
-      final current = await lessonRef.get();
-      String? roomId = current.data()?['roomId'];
-      await lessonRef.update({
-        ...lessonData,
-        if (roomId != null) "roomId": roomId, // Don't overwrite roomId!
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Lesson Updated Successfully ✅")),
-      );
-      Navigator.pop(context);
+      // Update lesson in MongoDB
+      final updated = await ApiService.updateLesson(widget.lessonId!, lessonData);
+      if (updated != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Lesson Updated Successfully ✅")),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update lesson.")),
+        );
+      }
     } else {
       // --- CREATE MEETING ON VideoSDK & SAVE roomId ---
       final roomId = await createMeeting(); // <-- VideoSDK API call
-      final lessonRef = FirebaseFirestore.instance.collection("lessons").doc();
       final newLessonData = {
         ...lessonData,
-        "lessonId": lessonRef.id,
-        "roomId": roomId, // <-- VideoSDK roomId, NOT lessonRef.id!
+        "roomId": roomId, // <-- VideoSDK roomId
         "status": "scheduled",
-        "createdAt": FieldValue.serverTimestamp(),
       };
-      await lessonRef.set(newLessonData);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Lesson Scheduled Successfully ✅")),
-      );
-      Navigator.pop(context);
+      final created = await ApiService.createLesson(newLessonData);
+      if (created != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Lesson Scheduled Successfully ✅")),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to schedule lesson.")),
+        );
+      }
     }
   }
 
@@ -500,3 +501,4 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
     );
   }
 }
+

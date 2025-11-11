@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:io' show Platform, Directory;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -13,6 +12,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'lessonschedule.dart';
 import 'theme.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../Service/chat_service.dart';
+import 'package:skill_buddy_fyp/Service/api_service.dart';
 
 const String cloudName = "dthkthzzf";
 const String uploadPreset = "unsigned_preset";
@@ -31,12 +33,33 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _controller = TextEditingController();
   late String chatRoomId;
   String _userRole = "student"; // default role
+  late ChatService _chatService;
+  List<Map<String, dynamic>> messages = [];
+  IO.Socket? _socket;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     chatRoomId = getChatRoomId(widget.currentUserId, widget.peerId);
+    _chatService = ChatService(baseUrl: 'http://192.168.100.5:3000', userId: widget.currentUserId);
+    _initChat();
     _loadUserRole();
+  }
+
+  Future<void> _initChat() async {
+    _chatService.connect();
+    _chatService.joinChat(chatRoomId);
+    _chatService.onReceiveMessage((msg) {
+      setState(() {
+        messages.add(msg);
+      });
+    });
+    final history = await _chatService.fetchChatHistory(widget.peerId);
+    setState(() {
+      messages = history;
+      _loading = false;
+    });
   }
 
   String getChatRoomId(String user1, String user2) {
@@ -46,14 +69,10 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _loadUserRole() async {
-    final userDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.currentUserId)
-        .get();
-
-    if (userDoc.exists && userDoc.data()?['role'] != null) {
+    final profile = await ApiService.getUserProfile(widget.currentUserId);
+    if (profile != null && profile['role'] != null) {
       setState(() {
-        _userRole = userDoc.data()!['role'];
+        _userRole = profile['role'].toString().toLowerCase();
       });
     }
   }
@@ -61,9 +80,7 @@ class _ChatPageState extends State<ChatPage> {
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-
-    final timestamp = Timestamp.now();
-
+    final timestamp = DateTime.now().toIso8601String();
     final message = {
       'senderId': widget.currentUserId,
       'receiverId': widget.peerId,
@@ -71,19 +88,13 @@ class _ChatPageState extends State<ChatPage> {
       'message': text,
       'timestamp': timestamp,
       'participants': [widget.currentUserId, widget.peerId],
-    };
-
-    final chatRoomRef =
-    FirebaseFirestore.instance.collection('chatRooms').doc(chatRoomId);
-
-    await chatRoomRef.set({
       'chatRoomId': chatRoomId,
-      'participants': [widget.currentUserId, widget.peerId],
-      'lastMessage': text,
-      'lastTimestamp': timestamp,
-    }, SetOptions(merge: true));
-
-    await chatRoomRef.collection('messages').add(message);
+    };
+    _chatService.sendMessage(message);
+    await _chatService.sendMessageToApi(message);
+    setState(() {
+      messages.add(message);
+    });
     _controller.clear();
   }
 
@@ -159,7 +170,7 @@ class _ChatPageState extends State<ChatPage> {
               .showSnackBar(SnackBar(content: Text("Failed to upload image.")));
           return;
         }
-        final timestamp = Timestamp.now();
+        final timestamp = DateTime.now().toIso8601String();
         final message = {
           'senderId': widget.currentUserId,
           'receiverId': widget.peerId,
@@ -168,16 +179,13 @@ class _ChatPageState extends State<ChatPage> {
           'fileName': fileName,
           'timestamp': timestamp,
           'participants': [widget.currentUserId, widget.peerId],
-        };
-        final chatRoomRef =
-        FirebaseFirestore.instance.collection('chatRooms').doc(chatRoomId);
-        await chatRoomRef.set({
           'chatRoomId': chatRoomId,
-          'participants': [widget.currentUserId, widget.peerId],
-          'lastMessage': '📷 Photo',
-          'lastTimestamp': timestamp,
-        }, SetOptions(merge: true));
-        await chatRoomRef.collection('messages').add(message);
+        };
+        _chatService.sendMessage(message);
+        await _chatService.sendMessageToApi(message);
+        setState(() {
+          messages.add(message);
+        });
       }
     } catch (e) {
       ScaffoldMessenger.of(context)
@@ -204,7 +212,7 @@ class _ChatPageState extends State<ChatPage> {
           );
           return;
         }
-        final timestamp = Timestamp.now();
+        final timestamp = DateTime.now().toIso8601String();
         final message = {
           'senderId': widget.currentUserId,
           'receiverId': widget.peerId,
@@ -213,17 +221,13 @@ class _ChatPageState extends State<ChatPage> {
           'url': url,
           'timestamp': timestamp,
           'participants': [widget.currentUserId, widget.peerId],
-        };
-        final chatRoomRef =
-        FirebaseFirestore.instance.collection('chatRooms').doc(chatRoomId);
-        await chatRoomRef.set({
           'chatRoomId': chatRoomId,
-          'participants': [widget.currentUserId, widget.peerId],
-          'lastMessage': '📄 Document',
-          'lastTimestamp': timestamp,
-        }, SetOptions(merge: true));
-        await chatRoomRef.collection('messages').add(message);
-
+        };
+        _chatService.sendMessage(message);
+        await _chatService.sendMessageToApi(message);
+        setState(() {
+          messages.add(message);
+        });
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text("Word document sent successfully!")));
       }
@@ -325,16 +329,15 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _deleteMessage(String messageId) async {
-    final msgRef = FirebaseFirestore.instance
-        .collection('chatRooms')
-        .doc(chatRoomId)
-        .collection('messages')
-        .doc(messageId);
+    // TODO: Implement delete message via API if needed
+    // Optionally emit a socket event for delete
+    print('[Chat] Delete message $messageId (not implemented)');
+  }
 
-    await msgRef.delete();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Message deleted!')),
-    );
+  @override
+  void dispose() {
+    _chatService.disconnect();
+    super.dispose();
   }
 
   @override
@@ -363,7 +366,7 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
         actions: [
-          if (_userRole == "instructor" || _userRole == "Both")
+          if (_userRole == "instructor" || _userRole == "both")
             IconButton(
               onPressed: () {
                 Navigator.push(
@@ -384,199 +387,171 @@ class _ChatPageState extends State<ChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('chatRooms')
-                  .doc(chatRoomId)
-                  .collection('messages')
-                  .orderBy('timestamp', descending: false)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Text(
-                      "No messages yet",
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 16,
-                      ),
-                    ),
-                  );
-                }
-
-                final messages = snapshot.data!.docs;
-                return ListView.builder(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = messages[index].data() as Map<String, dynamic>;
-                    final msgId = messages[index].id;
-                    final isMe = msg['senderId'] == widget.currentUserId;
-                    final msgType = msg['type'] ?? 'text';
-                    final deletedFor = msg['deletedFor'] ?? [];
-
-                    if (deletedFor.contains(widget.currentUserId)) {
-                      return const SizedBox.shrink();
-                    }
-
-                    Widget content;
-                    if (msgType == 'text') {
-                      content = Text(
-                        msg['message'] ?? '',
-                        style: TextStyle(
-                          color: isMe ? Colors.white : AppColors.primary,
-                          fontSize: 16,
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : messages.isEmpty
+                    ? Center(
+                        child: Text(
+                          "No messages yet",
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                          ),
                         ),
-                      );
-                    } else if (msgType == 'image') {
-                      final fileName = msg['fileName'] ?? 'image.jpg';
-                      final url = msg['url'];
-                      content = GestureDetector(
-                        onTap: () async {
-                          if (kIsWeb) {
-                            // Web: Only zoom preview
-                            showDialog(
-                              context: context,
-                              builder: (_) => Dialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                child: InteractiveViewer(
-                                  child: Image.network(url, fit: BoxFit.contain),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = messages[index];
+                          final isMe = msg['senderId'] == widget.currentUserId;
+                          final msgType = msg['type'] ?? 'text';
+                          Widget content;
+                          if (msgType == 'text') {
+                            content = Text(
+                              msg['message'] ?? '',
+                              style: TextStyle(
+                                color: isMe ? Colors.white : AppColors.primary,
+                                fontSize: 16,
+                              ),
+                            );
+                          } else if (msgType == 'image') {
+                            final fileName = msg['fileName'] ?? 'image.jpg';
+                            final url = msg['url'];
+                            content = GestureDetector(
+                              onTap: () async {
+                                if (kIsWeb) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => Dialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      child: InteractiveViewer(
+                                        child: Image.network(url, fit: BoxFit.contain),
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  await downloadToDownloadsFolder(url, fileName);
+                                }
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.network(
+                                  url,
+                                  height: 180,
+                                  width: 180,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(Icons.broken_image, size: 80, color: Colors.grey),
+                                ),
+                              ),
+                            );
+                          } else if (msgType == 'document') {
+                            final fileName = msg['fileName'] ?? 'Document.docx';
+                            final url = msg['url'];
+                            final fileIcon = _getFileIcon(fileName);
+                            if (!(fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx'))) {
+                              return const SizedBox.shrink();
+                            }
+                            content = InkWell(
+                              onTap: () async {
+                                await downloadToDownloadsFolder(url, fileName);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppColors.primary.withOpacity(0.15),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(fileIcon, color: AppColors.primary, size: 28),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        fileName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: AppColors.primary,
+                                          decoration: TextDecoration.underline,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Icon(Icons.download_rounded, color: AppColors.primary, size: 22),
+                                  ],
                                 ),
                               ),
                             );
                           } else {
-                            await downloadToDownloadsFolder(url, fileName);
+                            content = Text(
+                              "Unsupported message type",
+                              style: TextStyle(color: Colors.red),
+                            );
                           }
-                        },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.network(
-                            url,
-                            height: 180,
-                            width: 180,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(Icons.broken_image,
-                                size: 80, color: Colors.grey),
-                          ),
-                        ),
-                      );
-                    } else if (msgType == 'document') {
-                      final fileName = msg['fileName'] ?? 'Document.docx';
-                      final url = msg['url'];
-                      final fileIcon = _getFileIcon(fileName);
-                      if (!(fileName.toLowerCase().endsWith('.doc') || fileName.toLowerCase().endsWith('.docx'))) {
-                        return const SizedBox.shrink();
-                      }
-                      content = InkWell(
-                        onTap: () async {
-                          await downloadToDownloadsFolder(url, fileName);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: AppColors.primary.withOpacity(0.15),
-                              width: 2,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(fileIcon, color: AppColors.primary, size: 28),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  fileName,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    decoration: TextDecoration.underline,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                          return GestureDetector(
+                            onLongPress: () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: Text('Delete Message'),
+                                  content: Text('Do you want to delete this message?'),
+                                  actions: [
+                                    TextButton(
+                                      child: Text('Cancel'),
+                                      onPressed: () => Navigator.of(context).pop(),
+                                    ),
+                                    TextButton(
+                                      child: Text('Delete', style: TextStyle(color: Colors.red)),
+                                      onPressed: () async {
+                                        Navigator.of(context).pop();
+                                        await _deleteMessage(msg['id'] ?? '');
+                                      },
+                                    ),
+                                  ],
                                 ),
+                              );
+                            },
+                            child: Align(
+                              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                              child: Container(
+                                constraints: BoxConstraints(
+                                  maxWidth: MediaQuery.of(context).size.width * 0.70,
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                margin: EdgeInsets.only(
+                                  bottom: 8,
+                                  top: index == 0 ? 8 : 0,
+                                  left: isMe ? 40 : 0,
+                                  right: isMe ? 0 : 40,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isMe ? AppColors.chatMe : AppColors.chatPeer,
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(18),
+                                    topRight: const Radius.circular(18),
+                                    bottomLeft: Radius.circular(isMe ? 18 : 4),
+                                    bottomRight: Radius.circular(isMe ? 4 : 18),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black12,
+                                      blurRadius: 2,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: content,
                               ),
-                              const SizedBox(width: 10),
-                              Icon(Icons.download_rounded,
-                                  color: AppColors.primary, size: 22),
-                            ],
-                          ),
-                        ),
-                      );
-                    } else {
-                      content = Text(
-                        "Unsupported message type",
-                        style: TextStyle(color: Colors.red),
-                      );
-                    }
-
-                    // Long press to show delete dialog
-                    return GestureDetector(
-                      onLongPress: () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                            title: Text('Delete Message'),
-                            content: Text('Do you want to delete this message?'),
-                            actions: [
-                              TextButton(
-                                child: Text('Cancel'),
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                              TextButton(
-                                child: Text('Delete', style: TextStyle(color: Colors.red)),
-                                onPressed: () async {
-                                  Navigator.of(context).pop();
-                                  await _deleteMessage(msgId);
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      child: Align(
-                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.70,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
-                          margin: EdgeInsets.only(
-                            bottom: 8,
-                            top: index == 0 ? 8 : 0,
-                            left: isMe ? 40 : 0,
-                            right: isMe ? 0 : 40,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isMe ? AppColors.chatMe : AppColors.chatPeer,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(18),
-                              topRight: const Radius.circular(18),
-                              bottomLeft: Radius.circular(isMe ? 18 : 4),
-                              bottomRight: Radius.circular(isMe ? 4 : 18),
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 2,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: content,
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                );
-              },
-            ),
           ),
           const Divider(height: 1),
           Container(
@@ -647,3 +622,4 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 }
+

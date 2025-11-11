@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../Service/skilllist.dart';
 import 'StudentHome.dart';
-import 'theme.dart'; // <-- your AppColors should be defined here
-import 'package:skill_buddy_fyp/Screens/home.dart'; // <-- import the shared skills list
+import 'theme.dart';
+import 'package:skill_buddy_fyp/Screens/home.dart';
+import '../Service/api_service.dart';
 
 class SetProfilePage extends StatefulWidget {
   final Map<String, dynamic>? existingData;
   final bool cameFromProfilePage;
   final bool isFromSignUp;
+  final String? userId; // Pass userId from login/signup
 
   const SetProfilePage({
     super.key,
     this.existingData,
     this.cameFromProfilePage = false,
     this.isFromSignUp = false,
+    this.userId,
   });
 
   @override
@@ -24,29 +25,18 @@ class SetProfilePage extends StatefulWidget {
 
 class _SetProfilePageState extends State<SetProfilePage> {
   final _formKey = GlobalKey<FormState>();
-
-  // Controllers
   final TextEditingController _fullname = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _educationController = TextEditingController();
   final TextEditingController _countryController = TextEditingController();
-
-  // User & role fields
   String? _gender = 'Male';
   String selectedRole = 'Student';
-
-  // Auth instance
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  // Selected skills
   List<String> selectedTeachSkills = [];
   List<String> selectedLearnSkills = [];
 
   @override
   void initState() {
     super.initState();
-
-    // Populate fields if existingData provided
     if (widget.existingData != null) {
       final data = widget.existingData!;
       _fullname.text = data['Fullname'] ?? '';
@@ -57,7 +47,6 @@ class _SetProfilePageState extends State<SetProfilePage> {
       _educationController.text = data['education'] ?? '';
       selectedTeachSkills = List<String>.from(data['skillsToTeach'] ?? []);
       selectedLearnSkills = List<String>.from(data['skillsToLearn'] ?? []);
-      // Optionally: Load vectors if you want to restore them, but not needed for display/UI
     }
   }
 
@@ -70,7 +59,6 @@ class _SetProfilePageState extends State<SetProfilePage> {
     super.dispose();
   }
 
-  // Toggle skill selection
   void _toggleSkill(List<String> list, String skill) {
     setState(() {
       if (list.contains(skill)) {
@@ -81,13 +69,11 @@ class _SetProfilePageState extends State<SetProfilePage> {
     });
   }
 
-  // Phone validation for Pakistan numbers like 03XXXXXXXXX or +923XXXXXXXXX
   bool isValidPhoneNumber(String phone) {
     final regex = RegExp(r'^(03\d{9}|\+923\d{9})$');
     return regex.hasMatch(phone);
   }
 
-  // Build skill chips with playful style
   Widget _buildSkillChips(List<String> selectedList, bool isTeachList) {
     return LayoutBuilder(builder: (context, constraints) {
       final isSmall = constraints.maxWidth < 600;
@@ -126,7 +112,6 @@ class _SetProfilePageState extends State<SetProfilePage> {
     });
   }
 
-  // Input decoration used across fields
   InputDecoration _inputDecoration(String label, {String? hint}) {
     return InputDecoration(
       labelText: label,
@@ -143,88 +128,72 @@ class _SetProfilePageState extends State<SetProfilePage> {
     );
   }
 
-  // Create binary vector for skills
   List<int> _createSkillsVector(List<String> selectedSkills) {
-    // Always match the order of allSkills; future-proofing for new skills
     return List<int>.generate(
       allSkills.length,
-          (index) => selectedSkills.contains(allSkills[index]) ? 1 : 0,
+      (index) => selectedSkills.contains(allSkills[index]) ? 1 : 0,
     );
   }
 
-  // Save profile to Firestore
   Future<void> _saveProfile() async {
     final phone = _phoneController.text.trim();
-
     if (!isValidPhoneNumber(phone)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid phone number (e.g., 03XXXXXXXXX or +923XXXXXXXXX)')));
       return;
     }
-
-    // Validate form
     if (!_formKey.currentState!.validate()) return;
-
-    // Role-based skills
     List<String> teachSkills = [];
     List<String> learnSkills = [];
-
     if (selectedRole == 'Instructor' || selectedRole == 'Both') teachSkills = selectedTeachSkills;
     if (selectedRole == 'Student' || selectedRole == 'Both') learnSkills = selectedLearnSkills;
-
-    // Ensure teach/learn don't overlap
     final common = teachSkills.toSet().intersection(learnSkills.toSet());
     if (common.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Skills to Teach and Learn cannot be the same')));
       return;
     }
-
-    // Create binary vectors for KNN
     List<int> skillsToTeachVector = _createSkillsVector(teachSkills);
     List<int> skillsToLearnVector = _createSkillsVector(learnSkills);
-
-    final user = _auth.currentUser;
-    if (user == null) {
+    // Get userId from widget only (do not use SharedPreferences)
+    String? userId = widget.userId;
+    if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No authenticated user found')));
       return;
     }
-
     final userData = {
-      'uid': user.uid,
       'Fullname': _fullname.text.trim(),
       'phone': phone,
       'gender': _gender,
       'role': selectedRole,
       'education': _educationController.text.trim(),
       'country': _countryController.text.trim(),
-      'email': user.email ?? '',
       'skillsToTeach': teachSkills,
       'skillsToTeachVector': skillsToTeachVector,
       'skillsToLearn': learnSkills,
       'skillsToLearnVector': skillsToLearnVector,
       'profileSet': true,
-      'timestamp': FieldValue.serverTimestamp(),
-      // Optionally: Save skillToIndex for debugging/future-proofing (not needed for KNN)
-      // 'skillToIndex': skillToIndex,
+      'timestamp': DateTime.now().toIso8601String(),
     };
-
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(userData, SetOptions(merge: true));
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved successfully'), backgroundColor: Colors.green));
-      if (widget.cameFromProfilePage) {
-        Navigator.pop(context);
-      } else {
-        if (selectedRole.toLowerCase() == 'student') {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => StudentHomePage()));
+      final success = await ApiService.updateProfile(userId, userData);
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved successfully'), backgroundColor: Colors.green));
+        if (widget.cameFromProfilePage) {
+          Navigator.pop(context);
         } else {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => HomePage()));
+          if (selectedRole.toLowerCase() == 'student') {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => StudentHomePage()));
+          } else {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => HomePage(userId: userId)));
+          }
         }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save profile')));
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save profile: $e')));
     }
   }
 
-  // Small helper: dropdown container style
   Widget _styledDropdown(Widget child) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -239,12 +208,9 @@ class _SetProfilePageState extends State<SetProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final user = _auth.currentUser;
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth >= 800;
-
-    final displayName = (user?.email ?? 'User').split('@')[0];
-
+    final displayName = _fullname.text.isNotEmpty ? _fullname.text : 'User';
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -582,8 +548,8 @@ class _SetProfilePageState extends State<SetProfilePage> {
                             children: [
                               ElevatedButton.icon(
                                 onPressed: _saveProfile,
-                                icon: const Icon(Icons.save_rounded, size: 20,color: Colors.white),
-                                label: const Text('Save',style: TextStyle(color: Colors.white)),
+                                icon: const Icon(Icons.save_rounded, size: 20, color: Colors.white),
+                                label: const Text('Save', style: TextStyle(color: Colors.white)),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primary,
                                   padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
@@ -606,3 +572,4 @@ class _SetProfilePageState extends State<SetProfilePage> {
     );
   }
 }
+

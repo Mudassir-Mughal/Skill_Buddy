@@ -1,15 +1,15 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:skill_buddy_fyp/Screens/similarity.dart';
 import 'package:skill_buddy_fyp/Screens/videocall.dart';
 import '../Models/MatchUser.dart';
 import '../Service/MatchService.dart';
+import '../Service/api_service.dart';
 import '../Service/video_api.dart';
 import 'SkillCard.dart';
 import 'theme.dart';
 import "SearchResult.dart";
 import 'lessonschedule.dart';
+import 'dart:async';
 
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
@@ -26,36 +26,39 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   List<String> currentUserSkillsToTeach = [];
   bool isLoading = true;
   final TextEditingController _searchController = TextEditingController();
-  final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+  String currentUserId = ApiService.currentUserId ?? '';
 
   late Future<List<MatchUser>> _similarityMatchesFuture;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     fetchUserFullNameAndSkills();
     _similarityMatchesFuture = fetchSimilarityMatches();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> fetchUserFullNameAndSkills() async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-
-        final data = doc.data();
-        setState(() {
-          fullName = data?['Fullname'] ?? 'User';
-          currentUserName = data?['Fullname'] ?? 'User';
-          currentUserRole = data?['role'] ?? '';
-          currentUserSkillsToLearn = List<String>.from(data?['skillsToLearn'] ?? []);
-          currentUserSkillsToTeach = List<String>.from(data?['skillsToTeach'] ?? []);
-          isLoading = false;
-        });
-      }
+      final user = await ApiService.getUserProfile(currentUserId);
+      setState(() {
+        fullName = user?['Fullname'] ?? 'User';
+        currentUserName = user?['Fullname'] ?? 'User';
+        currentUserRole = user?['role'] ?? '';
+        currentUserSkillsToLearn = List<String>.from(user?['skillsToLearn'] ?? []);
+        currentUserSkillsToTeach = List<String>.from(user?['skillsToTeach'] ?? []);
+        isLoading = false;
+      });
     } catch (e) {
       debugPrint("Error fetching Fullname or skills: $e");
       setState(() {
@@ -83,15 +86,12 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
 
   Future<List<MatchUser>> fetchSimilarityMatches() async {
     final List<Map<String, dynamic>> rawMatches = await MatchService().findMatches();
-
     List<MatchUser> matches = [];
     for (var m in rawMatches) {
-      if ((m['similarity'] ?? 0.0) <= 0.0) continue; // filter out zero similarity
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(m['uid']).get();
-      final data = userDoc.data();
-      final skillsToTeach = List<String>.from(data?['skillsToTeach'] ?? []);
-      final skillsToLearn = List<String>.from(data?['skillsToLearn'] ?? []);
-
+      if ((m['similarity'] ?? 0.0) <= 0.0) continue;
+      final user = await ApiService.getUserProfile(m['uid']);
+      final skillsToTeach = List<String>.from(user?['skillsToTeach'] ?? []);
+      final skillsToLearn = List<String>.from(user?['skillsToLearn'] ?? []);
       matches.add(MatchUser(
         uid: m['uid'],
         name: m['name'],
@@ -103,16 +103,9 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     return matches;
   }
 
-  Stream<List<QueryDocumentSnapshot>> fetchLessonsRealtime() {
-    return FirebaseFirestore.instance
-        .collection('lessons')
-        .where('status', isEqualTo: 'scheduled')
-        .where(Filter.or(
-      Filter('studentId', isEqualTo: currentUserId),
-      Filter('instructorId', isEqualTo: currentUserId),
-    ))
-        .snapshots()
-        .map((snapshot) => snapshot.docs);
+  Future<List<Map<String, dynamic>>> fetchLessons() async {
+    final lessons = await ApiService.getLessonsForUser(instructorId: currentUserId, studentId: currentUserId);
+    return lessons.where((l) => l['status'] == 'scheduled').toList();
   }
 
   bool isLessonEditable(String date, String time) {
@@ -211,17 +204,26 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     );
     if (confirmed == true) {
       try {
-        await FirebaseFirestore.instance
-            .collection('lessons')
-            .doc(lessonId)
-            .delete();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text("Lesson deleted successfully"),
-              backgroundColor: theme.colorScheme.primary,
-            ),
-          );
+        final deleted = await ApiService.deleteLesson(lessonId);
+        if (deleted) {
+          if (context.mounted) {
+            setState(() {}); // Refresh UI
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text("Lesson deleted successfully"),
+                backgroundColor: theme.colorScheme.primary,
+              ),
+            );
+          }
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Delete failed: Lesson not found or server error."),
+                backgroundColor: theme.colorScheme.error,
+              ),
+            );
+          }
         }
       } catch (e) {
         if (context.mounted) {
@@ -253,18 +255,15 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
-  Future<void> checkAndEnableLesson(DocumentSnapshot doc) async {
-    final data = doc.data() as Map<String, dynamic>;
+  Future<void> checkAndEnableLesson(Map<String, dynamic> data, String lessonId) async {
     final enabled = data['enabled'] == true;
     final date = data['date'] ?? '';
     final startTimeRaw = data['start_time'] ?? '';
-
     if (!enabled && date != '' && startTimeRaw != '') {
       try {
         final start = DateTime.parse("$date $startTimeRaw".replaceAll('/', '-'));
-        if (DateTime.now().isAfter(start) ||
-            DateTime.now().isAtSameMomentAs(start)) {
-          await doc.reference.update({'enabled': true});
+        if (DateTime.now().isAfter(start) || DateTime.now().isAtSameMomentAs(start)) {
+          await ApiService.updateLesson(lessonId, {'enabled': true});
         }
       } catch (_) {}
     }
@@ -273,11 +272,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: theme.colorScheme.background,
-      body: StreamBuilder<List<QueryDocumentSnapshot>>(
-        stream: fetchLessonsRealtime(),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: fetchLessons(),
         builder: (context, snapshot) {
           final lessons = snapshot.data ?? [];
 
@@ -520,38 +518,40 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         )
                       else
                         Column(
-                          children: lessons.map((doc) {
-                            final data =
-                            doc.data() as Map<String, dynamic>;
-                            final lessonId = doc.id;
+                          children: lessons.map((data) {
+                            final lessonId = data['_id'] ?? data['lessonId'] ?? '';
                             final outline = data['outline'] ?? '';
                             final date = data['date'] ?? '';
                             final startTimeRaw = data['start_time'] ?? '';
                             final endTimeRaw = data['end_time'] ?? '';
                             final instructorId = data['instructorId'];
-                            final isInstructor =
-                                instructorId == currentUserId;
-                            final canEditDelete = isInstructor &&
-                                isLessonEditable(date, startTimeRaw);
-
-                            final startTimePretty =
-                            formatTime(startTimeRaw);
-                            final endTimePretty =
-                            formatTime(endTimeRaw);
-                            final timeRange = (startTimePretty.isNotEmpty &&
-                                endTimePretty.isNotEmpty)
+                            final isInstructor = instructorId == currentUserId;
+                            final canEditDelete = isInstructor && isLessonEditable(date, startTimeRaw);
+                            final startTimePretty = formatTime(startTimeRaw);
+                            final endTimePretty = formatTime(endTimeRaw);
+                            final timeRange = (startTimePretty.isNotEmpty && endTimePretty.isNotEmpty)
                                 ? "$startTimePretty - $endTimePretty"
-                                : (startTimePretty.isNotEmpty
-                                ? startTimePretty
-                                : endTimePretty);
-
-                            final lessonOver =
-                            isLessonOver(date, endTimeRaw);
+                                : (startTimePretty.isNotEmpty ? startTimePretty : endTimePretty);
+                            final lessonOver = isLessonOver(date, endTimeRaw);
                             final peerId = getPeerId(data);
-
                             final enabled = data['enabled'] == true;
+                            checkAndEnableLesson(data, lessonId);
 
-                            checkAndEnableLesson(doc);
+                            final now = DateTime.now();
+                            final lessonStart = DateTime.tryParse("$date $startTimeRaw".replaceAll('/', '-'));
+                            final lessonEnd = DateTime.tryParse("$date $endTimeRaw".replaceAll('/', '-'));
+                            bool shouldBeEnabled = false;
+                            if (lessonStart != null && lessonEnd != null) {
+                              shouldBeEnabled = now.isAfter(lessonStart) && now.isBefore(lessonEnd);
+                              // If lesson is over, update status to 'completed' in DB
+                              if (now.isAfter(lessonEnd) && data['status'] == 'scheduled') {
+                                ApiService.updateLesson(lessonId, {'status': 'completed', 'enabled': false});
+                              }
+                            }
+                            if (enabled != shouldBeEnabled && lessonId.isNotEmpty) {
+                              // Update enabled status in DB if needed
+                              ApiService.updateLesson(lessonId, {'enabled': shouldBeEnabled});
+                            }
 
                             return Container(
                               margin:
@@ -767,31 +767,26 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                                                             .bold,
                                                       ),
                                                     ),
-                                                    onPressed:
-                                                    enabled
+                                                    onPressed: enabled
                                                         ? () async {
-                                                      final lessonSnap = await FirebaseFirestore.instance
-                                                          .collection('lessons')
-                                                          .doc(lessonId)
-                                                          .get();
-                                                      final lessonData = lessonSnap.data();
-                                                      final roomId = lessonData?['roomId'];
-                                                      if (roomId == null) {
-                                                        ScaffoldMessenger.of(context).showSnackBar(
-                                                          SnackBar(content: Text("Room ID not found for this lesson.")),
-                                                        );
-                                                        return;
-                                                      }
-                                                      Navigator.push(
-                                                        context,
-                                                        MaterialPageRoute(
-                                                          builder: (_) => MeetingScreen(
-                                                            meetingId: roomId,
-                                                            token: token,
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }
+                                                            final lessonData = await ApiService.getLessonById(lessonId);
+                                                            final roomId = lessonData?['roomId'];
+                                                            if (roomId == null) {
+                                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                                SnackBar(content: Text("Room ID not found for this lesson.")),
+                                                              );
+                                                              return;
+                                                            }
+                                                            Navigator.push(
+                                                              context,
+                                                              MaterialPageRoute(
+                                                                builder: (_) => MeetingScreen(
+                                                                  meetingId: roomId,
+                                                                  token: token,
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }
                                                         : null,
                                                     style: ElevatedButton
                                                         .styleFrom(
@@ -998,3 +993,4 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     );
   }
 }
+
