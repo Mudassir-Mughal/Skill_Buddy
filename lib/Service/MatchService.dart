@@ -1,30 +1,27 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'KNNsimilarity.dart';
 
 class MatchService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final String baseUrl;
+  final String currentUserId;
+
+  MatchService({required this.baseUrl, required this.currentUserId});
 
   /// Get top matches for the logged-in user
   Future<List<Map<String, dynamic>>> findMatches() async {
-    final currentUid = _auth.currentUser?.uid;
-
-    if (currentUid == null) {
+    if (currentUserId.isEmpty) {
       print("❌ No user is logged in!");
-      return []; // Return empty list on error
+      return [];
     }
 
-    DocumentSnapshot currentUserDoc =
-    await _firestore.collection('users').doc(currentUid).get();
-
-    if (!currentUserDoc.exists) {
-      print("❌ Current user not found in Firestore!");
-      return []; // Return empty list on error
+    // Fetch current user from MongoDB
+    final currentUserRes = await http.get(Uri.parse('$baseUrl/api/users/$currentUserId'));
+    if (currentUserRes.statusCode != 200) {
+      print("❌ Current user not found in MongoDB!");
+      return [];
     }
-
-    Map<String, dynamic> currentUser =
-    currentUserDoc.data() as Map<String, dynamic>;
+    Map<String, dynamic> currentUser = jsonDecode(currentUserRes.body);
 
     List<int> currentLearn = (currentUser['skillsToLearnVector'] ?? [])
         .map<int>((e) => (e as num).toInt())
@@ -33,29 +30,40 @@ class MatchService {
         .map<int>((e) => (e as num).toInt())
         .toList();
 
-    QuerySnapshot allUsersSnapshot = await _firestore.collection('users').get();
+    print("Current user role: ${currentUser['role']}");
+    print("Current user skillsToLearnVector: $currentLearn");
+    print("Current user skillsToTeachVector: $currentTeach");
+
+    // Fetch all users from MongoDB
+    final allUsersRes = await http.get(Uri.parse('$baseUrl/api/users'));
+    if (allUsersRes.statusCode != 200) {
+      print("❌ Failed to fetch users from MongoDB!");
+      return [];
+    }
+    List<dynamic> allUsers = jsonDecode(allUsersRes.body);
 
     List<Map<String, dynamic>> matches = [];
 
-    for (var doc in allUsersSnapshot.docs) {
-      if (doc.id == currentUid) continue; // skip self
+    for (var other in allUsers) {
+      if (other['_id'] == currentUserId) continue; // skip self
 
-      Map<String, dynamic> other = doc.data() as Map<String, dynamic>;
-
+      print("Checking user: ${other['Fullname'] ?? other['email'] ?? other['_id']}");
+      print("Other user role: ${other['role']}");
       List<int> otherLearn = (other['skillsToLearnVector'] ?? [])
           .map<int>((e) => (e as num).toInt())
           .toList();
-
       List<int> otherTeach = (other['skillsToTeachVector'] ?? [])
           .map<int>((e) => (e as num).toInt())
           .toList();
+      print("Other user skillsToLearnVector: $otherLearn");
+      print("Other user skillsToTeachVector: $otherTeach");
 
       int vectorLength = currentLearn.isNotEmpty
           ? currentLearn.length
           : currentTeach.length;
       if (otherLearn.length != vectorLength &&
           otherTeach.length != vectorLength) {
-        print("⚠️ Skipping ${other['fullName']} due to vector length mismatch");
+        print("⚠️ Skipping due to vector length mismatch");
         continue;
       }
 
@@ -69,24 +77,23 @@ class MatchService {
         double sim2 = cosineSimilarity(currentTeach, otherLearn);
         sim = (sim1 + sim2) / 2;
       }
+      print("Similarity score: $sim");
 
       matches.add({
-        "uid": doc.id,
-        "name": other['fullName'],
+        "uid": other['_id'],
+        "name": other['Fullname'] ?? other['email'] ?? 'Unknown',
         "similarity": sim,
       });
     }
 
     matches.sort((a, b) => b['similarity'].compareTo(a['similarity']));
 
-    // Optionally: print top 3 matches (for debug/log)
-    print("🔥 Top Matches for ${currentUser['fullName']} 🔥");
+    print("🔥 Top Matches for "+(currentUser['Fullname']??currentUser['email']??'Unknown')+" 🔥");
     for (int i = 0; i < matches.length && i < 3; i++) {
       print(
           "${matches[i]['name']} (UID: ${matches[i]['uid']}) → Similarity: ${matches[i]['similarity']}");
     }
 
-    // 💡 RETURN the matches list for UI use!
     return matches;
   }
 }

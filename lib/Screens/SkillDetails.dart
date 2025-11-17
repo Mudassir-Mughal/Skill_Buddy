@@ -23,6 +23,9 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
   String instructorName = '';
   String instructorId = '';
 
+  // Define baseUrl for API calls
+  final String baseUrl = 'http://192.168.100.5:3000'; // Update with your backend URL
+
   @override
   void initState() {
     super.initState();
@@ -125,7 +128,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
+            color: AppColors.primary.withAlpha((255 * 0.08).round()),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -140,9 +143,9 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
       margin: const EdgeInsets.only(top: 30, bottom: 10),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.10),
+        color: AppColors.primary.withAlpha((255 * 0.10).round()),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withOpacity(0.21)),
+        border: Border.all(color: AppColors.primary.withAlpha((255 * 0.21).round())),
       ),
       padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
       child: Row(
@@ -211,8 +214,8 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: isBookmarked
-                        ? Colors.redAccent.withOpacity(0.12)
-                        : Colors.white.withOpacity(0.10),
+                        ? Colors.redAccent.withAlpha((255 * 0.12).round())
+                        : Colors.white.withAlpha((255 * 0.10).round()),
                   ),
                   padding: const EdgeInsets.all(8),
                   child: Icon(
@@ -248,7 +251,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.09),
+                      color: AppColors.primary.withAlpha((255 * 0.09).round()),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -273,7 +276,10 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => InstructorProfilePage(instructorId: instructorId),
+                    builder: (_) => InstructorProfilePage(
+                      instructorId: instructorId,
+                      baseUrl: baseUrl,
+                    ),
                   ),
                 );
               },
@@ -346,7 +352,7 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
                                         fontSize: 13,
                                       ),
                                     ),
-                                    backgroundColor: AppColors.primary.withOpacity(0.08),
+                                    backgroundColor: AppColors.primary.withAlpha((255 * 0.08).round()),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),

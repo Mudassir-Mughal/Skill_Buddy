@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:skill_buddy_fyp/Screens/profile.dart';
 import 'package:skill_buddy_fyp/Screens/settings.dart';
 import 'Chatlist.dart';
@@ -21,9 +19,11 @@ class StudentHomePage extends StatefulWidget {
 
 class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
-  final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  final String? currentUserId = ApiService.currentUserId;
   String userRole = "student";
   List<Widget> _pages = [];
+  Map<String, dynamic>? userProfileData;
+  bool isLoading = true;
 
   static const List<String> _pageTitles = [
     'Home',
@@ -42,22 +42,27 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
     final data = await ApiService.getUserProfile(currentUserId!);
     userRole = (data?['role'] ?? 'student').toString().toLowerCase();
     setState(() {
+      userProfileData = data;
       _pages = [
         HomeScreenContent(),
-        if (currentUserId != null)
-          ChatListPage(currentUserId: currentUserId!)
-        else
-          Center(child: Text('User not logged in')),
+        ChatListPage(currentUserId: currentUserId!, baseUrl: "http://192.168.100.5:3000"),
         ViewRequestsPage(role: userRole),
       ];
+      isLoading = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (isLoading || _pages.isEmpty) {
+      return Scaffold(
+        backgroundColor: theme.colorScheme.surface,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
-      backgroundColor: theme.colorScheme.background,
+      backgroundColor: theme.colorScheme.surface,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(50),
         child: Container(
@@ -65,7 +70,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
             color: theme.colorScheme.surface,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withAlpha((0.05 * 255).toInt()),
                 blurRadius: 10,
                 spreadRadius: 0,
                 offset: const Offset(0, 2),
@@ -93,7 +98,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                       onTap: () => _showProfileCard(context),
                       child: CircleAvatar(
                         radius: 20,
-                        backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                        backgroundColor: theme.colorScheme.primary.withAlpha((0.1 * 255).toInt()),
                         child: Icon(
                           Icons.person_outline,
                           color: theme.colorScheme.primary,
@@ -124,7 +129,8 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
 
   void _showProfileCard(BuildContext context) {
     final theme = Theme.of(context);
-
+    final displayName = userProfileData?['Fullname'] ?? 'User';
+    final email = userProfileData?['email'] ?? '';
     showDialog(
       context: context,
       barrierColor: Colors.black54,
@@ -139,7 +145,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withAlpha((0.1 * 255).toInt()),
                 blurRadius: 10,
                 spreadRadius: 0,
               ),
@@ -148,7 +154,6 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Profile Header with Gradient
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -157,7 +162,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                     end: Alignment.bottomRight,
                     colors: [
                       theme.colorScheme.primary,
-                      theme.colorScheme.primary.withOpacity(0.8),
+                      theme.colorScheme.primary.withAlpha((0.8 * 255).toInt()),
                     ],
                   ),
                   borderRadius: const BorderRadius.only(
@@ -188,7 +193,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+                      displayName,
                       style: theme.textTheme.titleLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -201,9 +206,10 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withAlpha((0.2 * 255).toInt()),
                         borderRadius: BorderRadius.circular(20),
                       ),
+                      child: Text(email, style: theme.textTheme.bodySmall?.copyWith(color: Colors.white)),
                     ),
                   ],
                 ),
@@ -216,7 +222,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                   Navigator.pop(context);
                   Navigator.push(
                     context,
-                      MaterialPageRoute(builder: (_) => ProfilePage(userId: currentUserId ?? ''))
+                    MaterialPageRoute(builder: (_) => ProfilePage(userId: currentUserId ?? ''))
                   );
                 },
                 theme: theme,
@@ -272,8 +278,8 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isDestructive
-                    ? theme.colorScheme.error.withOpacity(0.1)
-                    : theme.colorScheme.primary.withOpacity(0.1),
+                    ? theme.colorScheme.error.withAlpha((0.1 * 255).toInt())
+                    : theme.colorScheme.primary.withAlpha((0.1 * 255).toInt()),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -301,7 +307,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
                   Text(
                     subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                     ),
                   ),
                 ],
@@ -315,19 +321,15 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
 
   Future<void> _handleLogout(BuildContext context) async {
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-      if (await googleSignIn.isSignedIn()) {
-        await googleSignIn.disconnect();
-        await googleSignIn.signOut();
-      }
-      await FirebaseAuth.instance.signOut();
-
-      if (!context.mounted) return;
-
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-            (Route<dynamic> route) => false,
-      );
+      // LOGOUT: Remove local user state and navigate to login
+      Future.delayed(Duration.zero, () {
+        if (context.mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginPage()),
+                (Route<dynamic> route) => false,
+          );
+        }
+      });
     } catch (e) {
       debugPrint("Logout error: $e");
       if (!context.mounted) return;
@@ -357,7 +359,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
         color: theme.colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withAlpha((0.05 * 255).toInt()),
             blurRadius: 10,
             spreadRadius: 0,
             offset: const Offset(0, -2),
@@ -370,7 +372,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
           selectedIndex: _selectedIndex,
           onDestinationSelected: _onItemTapped,
           backgroundColor: Colors.transparent,
-          indicatorColor: theme.colorScheme.primary.withOpacity(0.15),
+          indicatorColor: theme.colorScheme.primary.withAlpha((0.15 * 255).toInt()),
           destinations: [
             _buildNavDestination(
               icon: Icons.home_outlined,
@@ -413,7 +415,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
         icon,
         color: isSelected
             ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface.withOpacity(0.6),
+            : theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
       ),
       selectedIcon: Icon(
         selectedIcon,

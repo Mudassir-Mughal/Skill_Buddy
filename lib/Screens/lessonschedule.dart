@@ -39,35 +39,55 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
     if (widget.isEdit && widget.lessonData != null) {
       final data = widget.lessonData!;
       _outlineController.text = data['outline'] ?? '';
-      // Parse date
+
+      // FIXED: Better date parsing
       if (data['date'] != null && data['date'] is String) {
-        final dateParts = (data['date'] as String).split("-");
-        if (dateParts.length == 3) {
-          _selectedDate = DateTime(
-            int.tryParse(dateParts[0]) ?? DateTime.now().year,
-            int.tryParse(dateParts[1]) ?? DateTime.now().month,
-            int.tryParse(dateParts[2]) ?? DateTime.now().day,
-          );
+        try {
+          final dateStr = data['date'] as String;
+          if (dateStr.contains('-')) {
+            final dateParts = dateStr.split("-");
+            if (dateParts.length == 3) {
+              _selectedDate = DateTime(
+                int.parse(dateParts[0]),
+                int.parse(dateParts[1]),
+                int.parse(dateParts[2]),
+              );
+            }
+          }
+        } catch (e) {
+          debugPrint("Error parsing date: $e");
         }
       }
-      // Parse start time
+
+      // FIXED: Better time parsing
       if (data['start_time'] != null && data['start_time'] is String) {
-        final timeParts = (data['start_time'] as String).split(":");
-        if (timeParts.length == 2) {
-          _selectedStartTime = TimeOfDay(
-            hour: int.tryParse(timeParts[0]) ?? 0,
-            minute: int.tryParse(timeParts[1]) ?? 0,
-          );
+        try {
+          final timeStr = data['start_time'] as String;
+          final timeParts = timeStr.split(":");
+          if (timeParts.length >= 2) {
+            _selectedStartTime = TimeOfDay(
+              hour: int.parse(timeParts[0]),
+              minute: int.parse(timeParts[1]),
+            );
+          }
+        } catch (e) {
+          debugPrint("Error parsing start time: $e");
         }
       }
-      // Parse end time
+
+      // FIXED: Better time parsing
       if (data['end_time'] != null && data['end_time'] is String) {
-        final timeParts = (data['end_time'] as String).split(":");
-        if (timeParts.length == 2) {
-          _selectedEndTime = TimeOfDay(
-            hour: int.tryParse(timeParts[0]) ?? 0,
-            minute: int.tryParse(timeParts[1]) ?? 0,
-          );
+        try {
+          final timeStr = data['end_time'] as String;
+          final timeParts = timeStr.split(":");
+          if (timeParts.length >= 2) {
+            _selectedEndTime = TimeOfDay(
+              hour: int.parse(timeParts[0]),
+              minute: int.parse(timeParts[1]),
+            );
+          }
+        } catch (e) {
+          debugPrint("Error parsing end time: $e");
         }
       }
     }
@@ -156,62 +176,184 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
     return null;
   }
 
+  // FIXED: Better date/time validation
+  String? _validateDateTime() {
+    if (_selectedDate == null) return "Please select a date";
+    if (_selectedStartTime == null) return "Please select start time";
+    if (_selectedEndTime == null) return "Please select end time";
+
+    final now = DateTime.now();
+    final lessonDateTime = DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedStartTime!.hour,
+      _selectedStartTime!.minute,
+    );
+
+    // Check if lesson is in the past
+    if (lessonDateTime.isBefore(now)) {
+      return "Cannot schedule lessons in the past";
+    }
+
+    return _validateTimes();
+  }
+
   Future<void> _scheduleOrUpdateLesson() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedDate == null || _selectedStartTime == null || _selectedEndTime == null) {
+
+    // FIXED: Better validation
+    final dateTimeValidation = _validateDateTime();
+    if (dateTimeValidation != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please select date, start time, and end time.")),
+        SnackBar(
+          content: Text(dateTimeValidation),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
-    final timeValidation = _validateTimes();
-    if (timeValidation != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(timeValidation)));
-      return;
-    }
 
-    final lessonData = {
-      "instructorId": widget.currentUserId,
-      "studentId": widget.peerId,
-      "outline": _outlineController.text.trim(),
-      "date": "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}",
-      "start_time": "${_selectedStartTime!.hour.toString().padLeft(2, '0')}:${_selectedStartTime!.minute.toString().padLeft(2, '0')}",
-      "end_time": "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}",
-      "enabled": false,
-    };
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation(AppColors.primary),
+        ),
+      ),
+    );
 
-    if (widget.isEdit && widget.lessonId != null) {
-      // Update lesson in MongoDB
-      final updated = await ApiService.updateLesson(widget.lessonId!, lessonData);
-      if (updated != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Lesson Updated Successfully ✅")),
-        );
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to update lesson.")),
-        );
-      }
-    } else {
-      // --- CREATE MEETING ON VideoSDK & SAVE roomId ---
-      final roomId = await createMeeting(); // <-- VideoSDK API call
-      final newLessonData = {
-        ...lessonData,
-        "roomId": roomId, // <-- VideoSDK roomId
-        "status": "scheduled",
+    try {
+      // FIXED: Consistent date formatting (YYYY-MM-DD)
+      final dateStr = "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}";
+      final startTimeStr = "${_selectedStartTime!.hour.toString().padLeft(2, '0')}:${_selectedStartTime!.minute.toString().padLeft(2, '0')}";
+      final endTimeStr = "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}";
+
+      // FIXED: Determine initial enabled state based on current time
+      final now = DateTime.now();
+      final lessonStart = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        _selectedStartTime!.hour,
+        _selectedStartTime!.minute,
+      );
+      final lessonEnd = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        _selectedEndTime!.hour,
+        _selectedEndTime!.minute,
+      );
+
+      // Check if lesson should be enabled immediately
+      final shouldBeEnabled = now.isAfter(lessonStart) && now.isBefore(lessonEnd);
+
+      final lessonData = {
+        "instructorId": widget.currentUserId,
+        "studentId": widget.peerId,
+        "outline": _outlineController.text.trim(),
+        "date": dateStr,
+        "start_time": startTimeStr,
+        "end_time": endTimeStr,
+        "enabled": shouldBeEnabled, // FIXED: Set based on current time
+        "status": "scheduled", // FIXED: Always set status
       };
-      final created = await ApiService.createLesson(newLessonData);
-      if (created != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Lesson Scheduled Successfully ✅")),
-        );
-        Navigator.pop(context);
+
+      debugPrint("📝 LESSON DATA:");
+      debugPrint("   Date: $dateStr");
+      debugPrint("   Start: $startTimeStr");
+      debugPrint("   End: $endTimeStr");
+      debugPrint("   Should be enabled: $shouldBeEnabled");
+      debugPrint("   Lesson start time: $lessonStart");
+      debugPrint("   Current time: $now");
+
+      if (widget.isEdit && widget.lessonId != null) {
+        // FIXED: For edits, preserve roomId if it exists
+        if (widget.lessonData != null && widget.lessonData!['roomId'] != null) {
+          lessonData['roomId'] = widget.lessonData!['roomId'];
+        }
+
+        // Update lesson in MongoDB
+        final updated = await ApiService.updateLesson(widget.lessonId!, lessonData);
+        Navigator.pop(context); // Close loading dialog
+
+        if (updated != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Lesson Updated Successfully ✅"),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to update lesson"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to schedule lesson.")),
-        );
+        // FIXED: Create meeting and handle errors properly
+        String? roomId;
+        try {
+          roomId = await createMeeting(); // VideoSDK API call
+          debugPrint("📹 Created VideoSDK room: $roomId");
+        } catch (e) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to create video room: $e"),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        if (roomId != null) {
+          lessonData['roomId'] = roomId;
+
+          final created = await ApiService.createLesson(lessonData);
+          Navigator.pop(context); // Close loading dialog
+
+          if (created != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Lesson Scheduled Successfully ✅"),
+                backgroundColor: Colors.green,
+              ),
+            );
+            Navigator.pop(context);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Failed to schedule lesson"),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } else {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to create video room"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      debugPrint("Error scheduling lesson: $e");
     }
   }
 
@@ -501,4 +643,3 @@ class _LessonSchedulePageState extends State<LessonSchedulePage> {
     );
   }
 }
-

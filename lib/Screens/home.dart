@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:skill_buddy_fyp/Screens/profile.dart';
 import 'package:skill_buddy_fyp/Screens/settings.dart';
 import 'Addskill.dart';
@@ -53,7 +51,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         skillId: widget.skillId,
         userId: currentUserId,
       ),
-      ChatListPage(currentUserId: currentUserId),
+      ChatListPage(currentUserId: currentUserId, baseUrl: "http://192.168.100.5:3000"),
       ViewRequestsPage(role: userRole),
     ];
     _fetchUserProfile();
@@ -72,14 +70,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (userProfileData == null) {
       return CircleAvatar(
         radius: radius,
-        backgroundColor: AppColors.primary.withOpacity(0.12),
+        backgroundColor: AppColors.primary.withAlpha((0.12 * 255).toInt()),
         child: Icon(Icons.person_outline, color: AppColors.primary, size: radius),
       );
     }
     String? photoUrl = userProfileData?['photoUrl'];
     final avatar = CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.primary.withOpacity(0.12),
+      backgroundColor: AppColors.primary.withAlpha((0.12 * 255).toInt()),
       backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
       child: (photoUrl == null || photoUrl.isEmpty)
           ? Icon(Icons.person_outline, color: AppColors.primary, size: radius)
@@ -90,7 +88,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: AppColors.primary.withOpacity(0.08),
+        color: AppColors.primary.withAlpha((0.08 * 255).toInt()),
       ),
       child: avatar,
     );
@@ -109,7 +107,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           color: theme.colorScheme.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withAlpha((0.05 * 255).toInt()),
               blurRadius: 10,
               spreadRadius: 0,
               offset: const Offset(0, 2),
@@ -164,14 +162,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               color: theme.colorScheme.surface,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withAlpha((0.04 * 255).toInt()),
                   blurRadius: 12,
                   offset: const Offset(1, 0),
                 ),
               ],
               border: Border(
                 right: BorderSide(
-                  color: theme.dividerColor.withOpacity(0.08),
+                  color: theme.dividerColor.withAlpha((0.08 * 255).toInt()),
                   width: 1.5,
                 ),
               ),
@@ -217,7 +215,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           color: theme.colorScheme.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withAlpha((0.05 * 255).toInt()),
               blurRadius: 10,
               spreadRadius: 0,
               offset: const Offset(0, -2),
@@ -234,14 +232,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               });
             },
             backgroundColor: Colors.transparent,
-            indicatorColor: theme.colorScheme.primary.withOpacity(0.15),
+            indicatorColor: theme.colorScheme.primary.withAlpha((0.15 * 255).toInt()),
             destinations: [
               NavigationDestination(
                 icon: Icon(
                   Icons.home_outlined,
                   color: _selectedIndex == 0
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                      : theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                 ),
                 selectedIcon: Icon(
                   Icons.home_rounded,
@@ -254,7 +252,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Icons.workspace_premium_outlined,
                   color: _selectedIndex == 1
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                      : theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                 ),
                 selectedIcon: Icon(
                   Icons.workspace_premium_rounded,
@@ -267,7 +265,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Icons.add_circle_outline,
                   color: _selectedIndex == 2
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                      : theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                 ),
                 selectedIcon: Icon(
                   Icons.add_circle_rounded,
@@ -280,7 +278,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Icons.chat_bubble_outline,
                   color: _selectedIndex == 3
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                      : theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                 ),
                 selectedIcon: Icon(
                   Icons.chat_bubble,
@@ -293,7 +291,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Icons.inbox_outlined,
                   color: _selectedIndex == 4
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                      : theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                 ),
                 selectedIcon: Icon(
                   Icons.inbox_rounded,
@@ -357,14 +355,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 13),
         decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary.withOpacity(0.10) : Colors.transparent,
+          color: isSelected ? theme.colorScheme.primary.withAlpha((0.10 * 255).toInt()) : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
             Icon(
               isSelected ? selectedIcon : icon,
-              color: isSelected ? theme.colorScheme.primary : theme.iconTheme.color?.withOpacity(0.65),
+              color: isSelected ? theme.colorScheme.primary : theme.iconTheme.color?.withAlpha((0.65 * 255).toInt()),
               size: 26,
             ),
             const SizedBox(width: 15),
@@ -373,7 +371,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               style: theme.textTheme.titleMedium?.copyWith(
                 color: isSelected
                     ? theme.colorScheme.primary
-                    : theme.textTheme.titleMedium?.color?.withOpacity(0.8),
+                    : theme.textTheme.titleMedium?.color?.withAlpha((0.8 * 255).toInt()),
                 fontWeight: FontWeight.w500,
                 letterSpacing: 0.2,
               ),
@@ -403,8 +401,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _showProfileCard(BuildContext context) {
     final theme = Theme.of(context);
-    final displayName = userProfileData?['Fullname'] ?? userProfileData?['fullName'] ?? FirebaseAuth.instance.currentUser?.displayName ?? 'User';
-    final email = userProfileData?['email'] ?? FirebaseAuth.instance.currentUser?.email ?? '';
+    final displayName = userProfileData?['Fullname'] ?? userProfileData?['fullName'] ?? 'User';
+    final email = userProfileData?['email'] ?? '';
     final photoUrl = userProfileData?['photoUrl'] ?? '';
     showDialog(
       context: context,
@@ -420,7 +418,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withAlpha((0.1 * 255).toInt()),
                 blurRadius: 10,
                 spreadRadius: 0,
               ),
@@ -437,7 +435,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     end: Alignment.bottomRight,
                     colors: [
                       theme.colorScheme.primary,
-                      theme.colorScheme.primary.withOpacity(0.85),
+                      theme.colorScheme.primary.withAlpha((0.85 * 255).toInt()),
                     ],
                   ),
                   borderRadius: const BorderRadius.only(
@@ -517,8 +515,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ],
           ),
         ),
-      ),
-    );
+      ),);
   }
 
   Widget _buildProfileMenuItem({
@@ -539,8 +536,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isDestructive
-                    ? theme.colorScheme.error.withOpacity(0.1)
-                    : theme.colorScheme.primary.withOpacity(0.1),
+                    ? theme.colorScheme.error.withAlpha((0.1 * 255).toInt())
+                    : theme.colorScheme.primary.withAlpha((0.1 * 255).toInt()),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -564,7 +561,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   Text(
                     subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      color: theme.colorScheme.onSurface.withAlpha((0.6 * 255).toInt()),
                     ),
                   ),
                 ],
@@ -572,24 +569,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
           ],
         ),
-      ),
-    );
+      ),);
   }
 
   Future<void> _handleLogout(BuildContext context) async {
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-
-      try {
-        await googleSignIn.disconnect();
-      } catch (_) {}
-
-      try {
-        await googleSignIn.signOut();
-      } catch (_) {}
-
-      await FirebaseAuth.instance.signOut();
-
+      // LOGOUT: Remove local user state and navigate to login
       Future.delayed(Duration.zero, () {
         if (context.mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -601,7 +586,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     } catch (e) {
       debugPrint("Logout error: $e");
       if (!context.mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(

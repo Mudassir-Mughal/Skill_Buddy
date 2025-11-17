@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'theme.dart';
 
 class InstructorProfilePage extends StatelessWidget {
   final String instructorId;
-  const InstructorProfilePage({super.key, required this.instructorId});
+  final String baseUrl;
+  const InstructorProfilePage({super.key, required this.instructorId, required this.baseUrl});
 
   Future<Map<String, dynamic>?> fetchInstructor() async {
-    final doc = await FirebaseFirestore.instance.collection('users').doc(instructorId).get();
-    return doc.data();
+    final response = await http.get(Uri.parse('$baseUrl/api/users/$instructorId'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      return null;
+    }
   }
 
   @override

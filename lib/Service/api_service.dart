@@ -9,7 +9,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> login(String email,
       String password) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/api/login'),
+      Uri.parse('$baseUrl/api/users/login'), // fixed endpoint
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
     );
@@ -26,7 +26,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> signupWithId(String email,
       String password) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/api/signup'),
+      Uri.parse('$baseUrl/api/users/signup'), // fixed endpoint
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
     );

@@ -1,10 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:skill_buddy_fyp/Screens/participant.dart';
-import 'package:skill_buddy_fyp/Screens/homecontent.dart';
 import 'package:videosdk/videosdk.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:skill_buddy_fyp/Service/api_service.dart';
 
 class MeetingScreen extends StatefulWidget {
   final String meetingId;
@@ -41,10 +39,10 @@ class _MeetingScreenState extends State<MeetingScreen> {
   }
 
   Future<void> fetchDisplayName() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final userId = ApiService.currentUserId;
     if (userId == null) return;
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    displayName = userDoc.data()?['Fullname'] ?? "User";
+    final userDoc = await ApiService.getUserProfile(userId);
+    displayName = userDoc?['Fullname'] ?? "User";
     initializeRoom();
   }
 
@@ -124,11 +122,6 @@ class _MeetingScreenState extends State<MeetingScreen> {
         });
       }
     });
-  }
-
-  Future<bool> _onWillPop() async {
-    _room.leave();
-    return false;
   }
 
   void _shareScreen() async {
@@ -233,7 +226,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
                 const Icon(Icons.screen_share, size: 18, color: Colors.greenAccent),
                 const SizedBox(width: 6),
                 Text(
-                  '${presenter.displayName ?? "Presenter"} is sharing',
+                  '${presenter.displayName} is sharing',
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                 )
               ],
@@ -264,7 +257,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (displayName == "User" && FirebaseAuth.instance.currentUser != null) {
+    if (displayName == "User" && ApiService.currentUserId != null) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -272,8 +265,11 @@ class _MeetingScreenState extends State<MeetingScreen> {
       return _buildScreenShareView(full: true);
     }
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) _room.leave();
+      },
       child: Scaffold(
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
@@ -327,7 +323,7 @@ class _MeetingScreenState extends State<MeetingScreen> {
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.deepPurple.withOpacity(0.13),
+                        color: Colors.deepPurple.withValues(alpha: 0.13),
                         blurRadius: 18,
                         offset: const Offset(0, 6),
                       ),

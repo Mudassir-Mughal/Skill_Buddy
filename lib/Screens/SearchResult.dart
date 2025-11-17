@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'SkillCard.dart';
 import 'SkillDetails.dart';
 import 'theme.dart';
@@ -104,8 +103,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   }
 
   Future<void> _saveClickedSkillToBackend(String skillName) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    final uid = ApiService.currentUserId ?? '';
+    if (uid.isEmpty) return;
     final skillIndex = skillToIndex[skillName.toLowerCase()];
     if (skillIndex == null) return;
     try {

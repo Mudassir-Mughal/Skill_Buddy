@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import 'Screens/Splash.dart';
 import 'Screens/theme.dart';
 import 'Service/MatchService.dart';
-import 'firebase_options.dart';
 
 // 🔑 Global navig
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // No Firebase initialization needed
+  // Set up MongoDB backend connection via your backend API only
 
-  MatchService matchService = MatchService();
+  final String baseUrl = 'http://192.168.100.5:3000'; // Use your backend URL
+  final String currentUserId = ''; // Set this to the logged-in user's ID
+
+  MatchService matchService = MatchService(baseUrl: baseUrl, currentUserId: currentUserId);
   await matchService.findMatches();
 
   runApp(const MyApp());

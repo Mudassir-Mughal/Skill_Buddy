@@ -15,6 +15,11 @@ const UserSchema = new mongoose.Schema({
   skillsToLearn: [{ type: String }],
   skillsToLearnVector: [{ type: Number }],
   profileSet: { type: Boolean, default: false },
+  lastClickedSkill: {
+    name: { type: String },
+    index: { type: Number },
+    timestamp: { type: Date }
+  },
   timestamp: { type: Date, default: Date.now }
 });
 

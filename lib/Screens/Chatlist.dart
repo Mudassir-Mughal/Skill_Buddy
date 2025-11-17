@@ -1,35 +1,43 @@
 import 'package:flutter/material.dart';
-import '../Service/ChatService.dart';
+import '../Service/chat_service.dart';
 import 'ChatPage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ChatListPage extends StatefulWidget {
   final String currentUserId;
+  final String baseUrl; // Add baseUrl for MongoDB API
 
-  ChatListPage({required this.currentUserId});
+  ChatListPage({required this.currentUserId, required this.baseUrl});
 
   @override
   _ChatListPageState createState() => _ChatListPageState();
 }
 
 class _ChatListPageState extends State<ChatListPage> {
-  final ChatService _chatService = ChatService();
+  late ChatService _chatService;
+
+  @override
+  void initState() {
+    super.initState();
+    _chatService = ChatService(baseUrl: widget.baseUrl, userId: widget.currentUserId);
+  }
 
   Future<String> getUserName(String userId) async {
-    final snapshot =
-    await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    // Change 'name' to 'Fullname' to match your Firestore field
-    return snapshot.data()?['Fullname'] ?? 'Unknown User';
+    return await _chatService.getUserName(userId);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamBuilder<List<String>>(
-        stream: _chatService.getChatPartners(widget.currentUserId),
+      body: FutureBuilder<List<String>>(
+        future: _chatService.getChatPartners(widget.currentUserId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting)
             return Center(child: CircularProgressIndicator());
+
+          // Debug print for chat partners
+          print('Chat partners for user ${widget.currentUserId}: ${snapshot.data}');
 
           if (!snapshot.hasData || snapshot.data!.isEmpty)
             return Center(child: Text("No chats found."));

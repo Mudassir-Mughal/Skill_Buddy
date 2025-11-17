@@ -51,36 +51,42 @@ class ChatService {
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((e) => Map<String, dynamic>.from(e)).toList();
+    } else {
+      print('[API] Error fetching chat history: ${response.statusCode}');
+      return [];
     }
-    return [];
   }
 
-  Future<void> sendMessageToApi(Map<String, dynamic> message) async {
+  Future<bool> sendMessageToApi(Map<String, dynamic> message) async {
     final url = Uri.parse('$baseUrl/api/chats');
     final response = await http.post(url, body: jsonEncode(message), headers: {'Content-Type': 'application/json'});
     print('[API] sendMessageToApi: ${response.statusCode} ${response.body}');
+    return response.statusCode == 201;
   }
 
-  // Changed to Future, not Stream. Since you are returning from an HTTP call, not a Firestore stream.
   Future<List<String>> getChatPartners(String userId) async {
     final url = Uri.parse('$baseUrl/api/chats/partners/$userId');
     final response = await http.get(url);
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
-      // Expecting backend to return a list of user IDs
       return data.cast<String>();
+    } else {
+      print('[API] Error fetching chat partners: ${response.statusCode}');
+      return [];
     }
-    return [];
   }
 
-  // Get a user's full name from API
   Future<String> getUserName(String userId) async {
     final url = Uri.parse('$baseUrl/api/users/$userId');
     final response = await http.get(url);
     if (response.statusCode == 200) {
       final Map<String, dynamic> data = jsonDecode(response.body);
-      return data['Fullname'] ?? 'Unknown User';
+      return (data['Fullname'] != null && data['Fullname'].toString().trim().isNotEmpty)
+          ? data['Fullname']
+          : 'Unknown User';
+    } else {
+      print('[API] Error fetching user name: ${response.statusCode}');
+      return 'Unknown User';
     }
-    return 'Unknown User';
   }
 }
