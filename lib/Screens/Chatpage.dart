@@ -15,6 +15,7 @@ import 'theme.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../Service/chat_service.dart';
 import 'package:skill_buddy_fyp/Service/api_service.dart';
+import '../config.dart';
 
 const String cloudName = "dthkthzzf";
 const String uploadPreset = "unsigned_preset";
@@ -42,7 +43,7 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     chatRoomId = getChatRoomId(widget.currentUserId, widget.peerId);
-    _chatService = ChatService(baseUrl: 'http://192.168.100.5:3000', userId: widget.currentUserId);
+    _chatService = ChatService(baseUrl: baseUrl, userId: widget.currentUserId);
     _initChat();
     _loadUserRole();
   }

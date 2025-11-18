@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'config.dart';
 
 import 'Screens/Splash.dart';
 import 'Screens/theme.dart';
@@ -12,10 +13,7 @@ void main() async {
   // No Firebase initialization needed
   // Set up MongoDB backend connection via your backend API only
 
-  final String baseUrl = 'http://192.168.100.5:3000'; // Use your backend URL
-  final String currentUserId = ''; // Set this to the logged-in user's ID
-
-  MatchService matchService = MatchService(baseUrl: baseUrl, currentUserId: currentUserId);
+  MatchService matchService = MatchService(baseUrl: baseUrl, currentUserId: '');
   await matchService.findMatches();
 
   runApp(const MyApp());

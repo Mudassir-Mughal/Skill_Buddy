@@ -10,6 +10,7 @@ class SetProfilePage extends StatefulWidget {
   final bool cameFromProfilePage;
   final bool isFromSignUp;
   final String? userId; // Pass userId from login/signup
+  final bool hideBackButton;
 
   const SetProfilePage({
     super.key,
@@ -17,6 +18,7 @@ class SetProfilePage extends StatefulWidget {
     this.cameFromProfilePage = false,
     this.isFromSignUp = false,
     this.userId,
+    this.hideBackButton = false,
   });
 
   @override
@@ -216,10 +218,12 @@ class _SetProfilePageState extends State<SetProfilePage> {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        leading: widget.hideBackButton
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
         title: const Text("Set Profile", style: TextStyle(color: Colors.white)),
         centerTitle: true,
       ),

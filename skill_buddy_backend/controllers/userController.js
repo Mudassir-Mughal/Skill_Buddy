@@ -105,3 +105,36 @@ exports.saveLastClickedSkill = async (req, res) => {
     res.status(500).json({ message: 'Failed to save last clicked skill', error: err.message });
   }
 };
+
+exports.getUserByEmail = async (req, res) => {
+  const email = req.query.email;
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+  try {
+    const user = await User.findOne({ email }).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+exports.googleSignup = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+  try {
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = new User({ email, profileSet: false });
+      await user.save();
+    }
+    res.status(201).json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};

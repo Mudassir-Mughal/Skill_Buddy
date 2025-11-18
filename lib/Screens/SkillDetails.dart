@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../Service/api_service.dart';
 import 'instructorprofile.dart';
 import 'theme.dart';
+import '../config.dart';
 
 class SkillDetailsPage extends StatefulWidget {
   final String skillId;
@@ -22,9 +23,6 @@ class _SkillDetailsPageState extends State<SkillDetailsPage> {
   Map<String, dynamic>? skill;
   String instructorName = '';
   String instructorId = '';
-
-  // Define baseUrl for API calls
-  final String baseUrl = 'http://192.168.100.5:3000'; // Update with your backend URL
 
   @override
   void initState() {

@@ -8,7 +8,7 @@ import 'theme.dart';
 import 'ViewRequest.dart';
 import 'package:animations/animations.dart';
 import '../Service/api_service.dart';
-
+import '../config.dart';
 
 class StudentHomePage extends StatefulWidget {
   const StudentHomePage({super.key});
@@ -45,7 +45,7 @@ class _StudentHomePageState extends State<StudentHomePage> with SingleTickerProv
       userProfileData = data;
       _pages = [
         HomeScreenContent(),
-        ChatListPage(currentUserId: currentUserId!, baseUrl: "http://192.168.100.5:3000"),
+        ChatListPage(currentUserId: currentUserId!, baseUrl: baseUrl),
         ViewRequestsPage(role: userRole),
       ];
       isLoading = false;

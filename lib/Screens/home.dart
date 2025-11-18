@@ -9,6 +9,7 @@ import 'theme.dart';
 import 'Myskills.dart';
 import 'ViewRequest.dart';
 import '../Service/api_service.dart';
+import '../config.dart';
 
 class HomePage extends StatefulWidget {
   final String userId;
@@ -51,7 +52,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         skillId: widget.skillId,
         userId: currentUserId,
       ),
-      ChatListPage(currentUserId: currentUserId, baseUrl: "http://192.168.100.5:3000"),
+      ChatListPage(currentUserId: currentUserId, baseUrl: baseUrl),
       ViewRequestsPage(role: userRole),
     ];
     _fetchUserProfile();

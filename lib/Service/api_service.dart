@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config.dart';
 
 class ApiService {
   static String? currentUserId; // Set this after login/signup, clear on logout
-  static const String baseUrl = 'http://192.168.100.5:3000'; // Use your computer's local IP address, no spaces
 
   // AUTH
   static Future<Map<String, dynamic>?> login(String email,
@@ -367,5 +367,30 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
     );
     return response.statusCode == 200;
+  }
+
+  static Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/users/by-email?email=$email'),
+      headers: {'Content-Type': 'application/json'},
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> createUserWithGoogle(String email) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/users/google-signup'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email}),
+    );
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      return null;
+    }
   }
 }

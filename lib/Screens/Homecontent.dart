@@ -10,6 +10,7 @@ import 'theme.dart';
 import "SearchResult.dart";
 import 'lessonschedule.dart';
 import 'dart:async';
+import '../config.dart';
 
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
@@ -314,7 +315,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   }
 
   Future<List<MatchUser>> fetchSimilarityMatches() async {
-    final String baseUrl = 'http://192.168.100.5:3000'; // Use your backend URL
     final String currentUserId = ApiService.currentUserId ?? '';
     final List<Map<String, dynamic>> rawMatches = await MatchService(
       baseUrl: baseUrl,
