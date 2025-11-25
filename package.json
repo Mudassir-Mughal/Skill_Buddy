@@ -1,0 +1,28 @@
+{
+  "name": "skill_buddy_fyp",
+  "version": "1.0.0",
+  "description": "A new Flutter project.",
+  "main": "server.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "cloudinary": "^2.8.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.5.0",
+    "mongodb": "^6.20.0",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.10",
+    "socket.io": "^4.8.1"
+  }
+}

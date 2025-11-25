@@ -1,0 +1,36 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "fyp-skill-buddy",
+          "appId": "1:588926423466:android:734255f019985362031bd3",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "fyp-skill-buddy",
+          "configurations": {
+            "android": "1:588926423466:android:734255f019985362031bd3",
+            "ios": "1:588926423466:ios:4430cae86708df66031bd3",
+            "web": "1:588926423466:web:954bca073fd6b545031bd3"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}
